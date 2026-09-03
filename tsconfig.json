@@ -1,0 +1,4 @@
+{
+  "extends": "@infinitetoken/tsconfig/react-native",
+  "include": ["src"]
+}

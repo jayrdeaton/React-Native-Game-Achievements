@@ -1,0 +1,96 @@
+{
+  "name": "@tastic/achievements",
+  "version": "0.1.0",
+  "description": "Achievement and stats engine for local-multiplayer React Native games: a generic tiered achievement catalog evaluated as pure predicates over whatever stats shape a game defines, per-profile unlock namespacing, AsyncStorage-backed persistence with a self-healing re-sweep, and the win/day-streak primitives a game's own outcome funnel composes",
+  "keywords": [
+    "react-native",
+    "expo",
+    "local-multiplayer",
+    "couch-multiplayer",
+    "achievements",
+    "stats",
+    "streaks",
+    "leaderboard",
+    "progression"
+  ],
+  "homepage": "https://github.com/jayrdeaton/react-native-game-achievements#readme",
+  "bugs": {
+    "url": "https://github.com/jayrdeaton/react-native-game-achievements/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jayrdeaton/react-native-game-achievements.git"
+  },
+  "license": "MIT",
+  "author": "Jay Deaton",
+  "sideEffects": false,
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "react-native": "./src/index.ts",
+      "browser": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "react-native": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "!src/__tests__",
+    "!src/__mocks__"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "fix": "eslint --fix",
+    "lint": "eslint",
+    "prepublishOnly": "npm run build",
+    "release": "git push --follow-tags",
+    "release:major": "npm version major && npm run release",
+    "release:minor": "npm version minor && npm run release",
+    "release:patch": "npm version patch && npm run release",
+    "test": "jest",
+    "test:watch": "jest --watchAll",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run lint && npm test && npm run typecheck && npm run build",
+    "preversion": "npm ci && npm run verify"
+  },
+  "prettier": "@infinitetoken/eslint-config/prettier",
+  "devDependencies": {
+    "@infinitetoken/eslint-config": "^0.1.8",
+    "@infinitetoken/jest-config": "^0.2.1",
+    "@infinitetoken/tsconfig": "^0.3.0",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/jest": "^30.0.0",
+    "@types/react": "^19.0.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-native": "^5.0.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "prettier": "^3.8.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": ">=1.18.0",
+    "react": ">=19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
