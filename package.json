@@ -1,6 +1,6 @@
 {
   "name": "@tastic/achievements",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Achievement and stats engine for local-multiplayer React Native games: a generic tiered achievement catalog evaluated as pure predicates over whatever stats shape a game defines, per-profile unlock namespacing, AsyncStorage-backed persistence with a self-healing re-sweep, and the win/day-streak primitives a game's own outcome funnel composes",
   "keywords": [
     "react-native",
