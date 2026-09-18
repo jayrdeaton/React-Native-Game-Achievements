@@ -33,10 +33,17 @@ export function applyTestOutcome(prev: TestStats, result: RoundResult, profileId
   }
 }
 
-// Synthesizes the full TStats-shaped view each profile's achievements are evaluated against — the
-// generic equivalent of LightCycles' own getProfileStatsView.
+// Synthesizes the full TStats-shaped view one profile's own bucket is evaluated against — the
+// generic equivalent of LightCycles' own getProfileStatsView, and exactly the shape
+// createAchievementBindings' own getProfileStatsView parameter expects.
+export function testProfileStatsView(profileStats: TestProfileStats): TestStats {
+  return { ...profileStats, firstGameResult: null, profiles: {} }
+}
+
+// Synthesizes every profile's view at once, keyed by profile id — what a real app's own
+// `profileViews` option (see useAchievements.ts) passes to useAchievements.
 export function testProfileViews(stats: TestStats): Record<string, TestStats> {
-  return Object.fromEntries(Object.entries(stats.profiles).map(([id, bucket]) => [id, { ...bucket, firstGameResult: null, profiles: {} }]))
+  return Object.fromEntries(Object.entries(stats.profiles).map(([id, bucket]) => [id, testProfileStatsView(bucket)]))
 }
 
 export const TEST_CATALOG: AchievementDefinition<TestStats>[] = [

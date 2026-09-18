@@ -67,3 +67,61 @@ export function removeProfileUnlocks(unlocked: UnlockedAchievementsState, profil
   const entries = Object.entries(unlocked).filter(([key]) => !key.startsWith(prefix))
   return entries.length === Object.keys(unlocked).length ? unlocked : Object.fromEntries(entries)
 }
+
+// The inverse translation of what useAchievements' recordOutcome returns: its `profiles` map is
+// keyed by profile id (it has no notion of seats); every game here thinks in seats. Give it the
+// app's own seat list, its seat -> profileId map for this round, and recordOutcome's profileId ->
+// newly-unlocked map, and it hands back a seat -> newly-unlocked map — only seats that both have a
+// profile selected AND actually unlocked something get an entry (mirrors the `if (unlocked &&
+// unlocked.length > 0)` guard every app already hand-rolls today). `seats` is NOT hardcoded to
+// [1, 2] internally — a Partial<Record<Seat, X>> doesn't let TypeScript recover Seat's possible
+// values from the type alone at runtime, so the caller keeps supplying its own seat list exactly as
+// every existing manual loop already does.
+export function mapUnlocksBySeat<TStats, Seat extends string | number>(seats: readonly Seat[], seatProfileIds: Partial<Record<Seat, string>> | undefined, profileUnlocks: Record<string, AchievementDefinition<TStats>[]>): Partial<Record<Seat, AchievementDefinition<TStats>[]>> {
+  const bySeat: Partial<Record<Seat, AchievementDefinition<TStats>[]>> = {}
+  if (!seatProfileIds) return bySeat
+  for (const seat of seats) {
+    const profileId = seatProfileIds[seat]
+    if (!profileId) continue
+    const unlocked = profileUnlocks[profileId]
+    if (unlocked && unlocked.length > 0) bySeat[seat] = unlocked
+  }
+  return bySeat
+}
+
+// A device-wide unlock (no per-seat owner, e.g. an "All Profiles"/first-ever-game achievement)
+// still needs to reach every human seat's own facing UI in two-human-seat modes, since neither seat
+// is more entitled to it than the other. Appends `device` onto EVERY seat in `seats`, after that
+// seat's own already-profile-scoped unlocks — order matters, since it's the toast/display order a
+// player sees, not just data: every existing call site concatenates a seat's own unlocks BEFORE the
+// device-wide ones. Returns a new object; never mutates `bySeat`.
+export function broadcastDeviceUnlocks<TStats, Seat extends string | number>(seats: readonly Seat[], bySeat: Partial<Record<Seat, AchievementDefinition<TStats>[]>>, device: AchievementDefinition<TStats>[]): Partial<Record<Seat, AchievementDefinition<TStats>[]>> {
+  const broadcast = { ...bySeat }
+  if (device.length > 0) {
+    for (const seat of seats) {
+      broadcast[seat] = [...(broadcast[seat] ?? []), ...device]
+    }
+  }
+  return broadcast
+}
+
+export interface AchievementBindings<TStats, TProfileStats> {
+  evaluateUnlockedIds: (stats: TStats) => Set<string>
+  evaluateUnlockedIdsForProfile: (profileStats: TProfileStats) => Set<string>
+  unlockedKey: typeof unlockedKey
+}
+
+// Every consuming game hand-rolls the exact same three-export module: evaluateUnlockedIds and
+// evaluateUnlockedIdsForProfile pre-bound to that game's own catalog constant, plus unlockedKey
+// re-exported unchanged. This is that module, generic over TStats/TProfileStats so a game's own
+// binding file becomes a thin re-export of this call's result under the SAME names — no other call
+// site in that app has to change its import path.
+export function createAchievementBindings<TStats, TProfileStats>(catalog: AchievementDefinition<TStats>[], getProfileStatsView: (profileStats: TProfileStats) => TStats): AchievementBindings<TStats, TProfileStats> {
+  return {
+    evaluateUnlockedIds: (stats) => evaluateUnlockedIds(catalog, stats),
+    // `scope: 'profile'` filters out scope:'device' achievements (see EvaluateOptions above), so
+    // this can never produce a bogus `profileId:some_device_achievement` key.
+    evaluateUnlockedIdsForProfile: (profileStats) => evaluateUnlockedIds(catalog, getProfileStatsView(profileStats), { scope: 'profile' }),
+    unlockedKey
+  }
+}

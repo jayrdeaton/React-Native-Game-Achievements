@@ -1,5 +1,5 @@
-import { achievementUnlockedAt, evaluateUnlockedIds, isAchievementUnlocked, newlyUnlocked, parseUnlockedKey, unlockedKey } from '../index'
-import { applyTestOutcome, DEFAULT_TEST_STATS, TEST_CATALOG, TestStats } from './fixtures'
+import { achievementUnlockedAt, broadcastDeviceUnlocks, createAchievementBindings, evaluateUnlockedIds, isAchievementUnlocked, mapUnlocksBySeat, newlyUnlocked, parseUnlockedKey, unlockedKey } from '../index'
+import { applyTestOutcome, DEFAULT_TEST_STATS, TEST_CATALOG, testProfileStatsView, TestStats } from './fixtures'
 
 function statsAfter(...results: ('win' | 'loss' | 'draw')[]): TestStats {
   return results.reduce((stats, result) => applyTestOutcome(stats, result), DEFAULT_TEST_STATS)
@@ -93,6 +93,36 @@ describe('newlyUnlocked', () => {
   })
 })
 
+describe('createAchievementBindings', () => {
+  const bindings = createAchievementBindings(TEST_CATALOG, testProfileStatsView)
+
+  it('evaluateUnlockedIds behaves exactly like the generic function pre-bound to the catalog', () => {
+    const stats = statsAfter('win', 'win', 'win')
+    expect(bindings.evaluateUnlockedIds(stats)).toEqual(evaluateUnlockedIds(TEST_CATALOG, stats))
+  })
+
+  it('evaluateUnlockedIdsForProfile runs the profile-stats-view through profile-scoped evaluation', () => {
+    const { profiles } = applyTestOutcome(DEFAULT_TEST_STATS, 'win', ['profile-1'])
+    const profileStats = profiles['profile-1']
+    const ids = bindings.evaluateUnlockedIdsForProfile(profileStats)
+    expect(ids).toEqual(evaluateUnlockedIds(TEST_CATALOG, testProfileStatsView(profileStats), { scope: 'profile' }))
+    expect(ids).toEqual(new Set(['first_game', 'total_wins_bronze']))
+  })
+
+  it('never leaks a device-scoped achievement into evaluateUnlockedIdsForProfile', () => {
+    const deviceStats = applyTestOutcome(DEFAULT_TEST_STATS, 'win', ['profile-1'])
+    // Device-wide, flawless_debut is unlocked — the very first game recorded was a win.
+    expect(bindings.evaluateUnlockedIds(deviceStats).has('flawless_debut')).toBe(true)
+    // It's scope: 'device' though, so profile-1's own view never surfaces it, even though that same
+    // win was also profile-1's own first game.
+    expect(bindings.evaluateUnlockedIdsForProfile(deviceStats.profiles['profile-1']).has('flawless_debut')).toBe(false)
+  })
+
+  it('re-exports unlockedKey unchanged', () => {
+    expect(bindings.unlockedKey).toBe(unlockedKey)
+  })
+})
+
 describe('isAchievementUnlocked / achievementUnlockedAt', () => {
   const unlocked = { first_game: 1756800000000, 'profile-1:first_game': 1756800000001 }
 
@@ -109,5 +139,70 @@ describe('isAchievementUnlocked / achievementUnlockedAt', () => {
   it('reports a profile that has not unlocked it as locked, without falling back to device-wide', () => {
     expect(isAchievementUnlocked(unlocked, 'first_game', 'profile-2')).toBe(false)
     expect(achievementUnlockedAt(unlocked, 'first_game', 'profile-2')).toBeNull()
+  })
+})
+
+describe('mapUnlocksBySeat', () => {
+  const [firstGame, flawlessDebut] = TEST_CATALOG
+
+  it('returns an empty map when seatProfileIds is undefined', () => {
+    expect(mapUnlocksBySeat([1, 2], undefined, { 'profile-1': [firstGame] })).toEqual({})
+  })
+
+  it('skips a seat with no profile selected', () => {
+    const result = mapUnlocksBySeat([1, 2], { 1: 'profile-1' }, { 'profile-1': [firstGame] })
+    expect(result).toEqual({ 1: [firstGame] })
+    expect(result).not.toHaveProperty('2')
+  })
+
+  it('skips a seat whose profile did not unlock anything', () => {
+    const result = mapUnlocksBySeat([1, 2], { 1: 'profile-1', 2: 'profile-2' }, { 'profile-1': [firstGame] })
+    expect(result).toEqual({ 1: [firstGame] })
+  })
+
+  it('maps every seat that both has a profile and unlocked something', () => {
+    const result = mapUnlocksBySeat([1, 2], { 1: 'profile-1', 2: 'profile-2' }, { 'profile-1': [firstGame], 'profile-2': [flawlessDebut] })
+    expect(result).toEqual({ 1: [firstGame], 2: [flawlessDebut] })
+  })
+
+  it('works with non-numeric seat keys', () => {
+    const result = mapUnlocksBySeat(['left', 'right'] as const, { left: 'profile-1' }, { 'profile-1': [firstGame] })
+    expect(result).toEqual({ left: [firstGame] })
+  })
+})
+
+describe('broadcastDeviceUnlocks', () => {
+  const [firstGame, flawlessDebut] = TEST_CATALOG
+
+  it('returns a plain copy of bySeat when nothing device-wide unlocked', () => {
+    const bySeat = { 1: [firstGame] }
+    const result = broadcastDeviceUnlocks([1, 2], bySeat, [])
+    expect(result).toEqual(bySeat)
+    expect(result).not.toBe(bySeat)
+  })
+
+  it('appends a device-wide unlock onto every seat, including one with no prior unlocks', () => {
+    const result = broadcastDeviceUnlocks([1, 2], {}, [flawlessDebut])
+    expect(result).toEqual({ 1: [flawlessDebut], 2: [flawlessDebut] })
+  })
+
+  it('appends device-wide unlocks AFTER a seat own profile-scoped unlocks', () => {
+    const result = broadcastDeviceUnlocks([1, 2], { 1: [firstGame] }, [flawlessDebut])
+    expect(result).toEqual({ 1: [firstGame, flawlessDebut], 2: [flawlessDebut] })
+  })
+
+  it('never mutates the bySeat argument', () => {
+    const bySeat = { 1: [firstGame] }
+    broadcastDeviceUnlocks([1, 2], bySeat, [flawlessDebut])
+    expect(bySeat).toEqual({ 1: [firstGame] })
+  })
+})
+
+describe('mapUnlocksBySeat + broadcastDeviceUnlocks composed (the real call-site shape)', () => {
+  it('combines a profile-scoped unlock with a device-wide one, own-profile ordered before device', () => {
+    const [firstGame, flawlessDebut] = TEST_CATALOG
+    const bySeat = mapUnlocksBySeat([1, 2], { 1: 'profile-1' }, { 'profile-1': [firstGame] })
+    const combined = broadcastDeviceUnlocks([1, 2], bySeat, [flawlessDebut])
+    expect(combined).toEqual({ 1: [firstGame, flawlessDebut], 2: [flawlessDebut] })
   })
 })

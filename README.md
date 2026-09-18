@@ -55,8 +55,18 @@ evaluation, namespacing and persistence machinery.
 - **`evaluateUnlockedIds` / `newlyUnlocked` / `unlockedKey` / `parseUnlockedKey`** — the engine.
   Given a catalog and a stats object, what's unlocked, and what's *newly* unlocked relative to a
   stored map.
+- **`createAchievementBindings`** — pre-binds `evaluateUnlockedIds` / `evaluateUnlockedIdsForProfile`
+  / `unlockedKey` to your own catalog and profile-stats-view function, so your app's own
+  `achievementEngine.ts` shrinks to a five-line re-export instead of hand-rolling the same binding
+  every game needs. See "Per-profile achievements" below.
 - **`useAchievements`** — the persistence hook: loads both blobs, runs the self-healing re-sweep,
   and gives you one `recordOutcome` funnel that persists and reports what just unlocked.
+- **`mapUnlocksBySeat` / `broadcastDeviceUnlocks`** — `recordOutcome`'s `profiles` result is keyed by
+  profile id; a local-multiplayer screen thinks in seats. These translate one into the other and
+  layer a device-wide unlock onto every seat.
+- **`getAchievementCatalogRows` / `defaultFormatUnlockedLabel`** — the per-achievement
+  scope/`unlockedAt`/`progress`/tier-color computation an achievements-catalog screen's own
+  `ACHIEVEMENT_CATALOG.map()` loop hand-rolls, plus the "Unlocked N days ago" label formatter.
 
 ## Defining a catalog
 
@@ -137,6 +147,8 @@ app keeps prior screens mounted, so a per-screen copy could go stale or clobber 
 update), and share it through a context of your own.
 
 ```tsx
+import { ACHIEVEMENT_TIER_COLORS } from '@tastic/achievements'
+
 const { stats, unlockedAchievements, loaded, recordOutcome, resetAll, removeProfile } = useAchievements({
   namespace: 'lightcycles', // -> 'lightcycles.stats' and 'lightcycles.achievements'
   catalog: ACHIEVEMENT_CATALOG,
@@ -145,9 +157,12 @@ const { stats, unlockedAchievements, loaded, recordOutcome, resetAll, removeProf
   profileViews: (stats) => mapValues(stats.profiles, toStatsView)
 })
 
-// After a round:
+// After a round — every newly-unlocked achievement gets its own toast, in its own tier color and
+// icon (never a single summary toast); a seat's own profile unlocks join the device-wide ones.
 const { device, profiles } = recordOutcome((prev) => applyRoundOutcome(prev, winner, context))
-if (device.length > 0) toast(`Unlocked: ${device[0].title}`)
+;[...device, ...(profiles[1] ?? [])].forEach((achievement) => {
+  toast(achievement.title, { color: ACHIEVEMENT_TIER_COLORS[achievement.tier], icon: achievement.icon })
+})
 ```
 
 `recordOutcome` takes *your* updater, evaluates the catalog against the result, persists both blobs,
@@ -159,6 +174,35 @@ with it. Both are validated on load; a corrupt one silently falls back to defaul
 is yours to supply because this package can't know `TStats` well enough to check it. `migrateStats`
 runs once per load on a validated blob — the place to backfill a purely-additive new field without
 any schema-versioning machinery.
+
+### Seat-keyed unlocks for local multiplayer
+
+`recordOutcome`'s result has no notion of seats — its `profiles` map is keyed by profile id — but a
+two-player screen thinks in seats. `mapUnlocksBySeat` translates one into the other, and
+`broadcastDeviceUnlocks` layers a device-wide unlock (like "first game ever", which no single seat
+owns) onto every seat afterward:
+
+```ts
+import { broadcastDeviceUnlocks, mapUnlocksBySeat } from '@tastic/achievements'
+
+const { device, profiles } = recordOutcome((prev) => applyRoundOutcome(prev, winner, context))
+
+const seats = [1, 2] as const
+const bySeat = mapUnlocksBySeat(seats, seatProfileIds, profiles) // seatProfileIds: Partial<Record<1 | 2, string>>
+const withDevice = broadcastDeviceUnlocks(seats, bySeat, device)
+
+seats.forEach((seat) => {
+  ;(withDevice[seat] ?? []).forEach((achievement) => {
+    toast(achievement.title, { color: ACHIEVEMENT_TIER_COLORS[achievement.tier], icon: achievement.icon })
+  })
+})
+```
+
+`mapUnlocksBySeat` only sets a key for a seat that both has a profile selected *and* actually
+unlocked something this round — a seat that unlocked nothing gets no entry at all, not an empty
+array. `broadcastDeviceUnlocks` always appends `device` after a seat's own unlocks (`[...own,
+...device]`), never the reverse, since that's the toast order a player actually sees — and it
+returns a new object rather than mutating `bySeat`.
 
 ### The self-healing re-sweep
 
@@ -187,13 +231,66 @@ not fall back to the device-wide key.
 When a profile is deleted, call `removeProfile(id, updater)` so it leaves no orphaned unlock history
 behind. Prefix matching is exact, so a profile whose id is a prefix of another's is unaffected.
 
-## Install (local dev via yalc)
+### Binding the engine to your own catalog
 
-Not published to the public npm registry yet.
+Every game ends up writing the same thin `src/utils/achievementEngine.ts`: `evaluateUnlockedIds` and
+`evaluateUnlockedIdsForProfile` pre-bound to its own catalog constant and its own
+`getProfileStatsView`, plus `unlockedKey` re-exported unchanged. `createAchievementBindings` is that
+module, generic over your `TStats`/`TProfileStats`:
+
+```ts
+import { createAchievementBindings } from '@tastic/achievements'
+
+import { ACHIEVEMENT_CATALOG } from '@/constants/achievements'
+import { getProfileStatsView } from '@/utils/statsEngine'
+
+export const { evaluateUnlockedIds, evaluateUnlockedIdsForProfile, unlockedKey } = createAchievementBindings(ACHIEVEMENT_CATALOG, getProfileStatsView)
+```
+
+`getProfileStatsView` is your own `(profileStats: TProfileStats) => TStats` — typically
+`{ ...profileStats, profiles: {}, firstGameResult: null }` or whatever synthesizes a full
+`TStats`-shaped view from one profile's own bucket. The returned `evaluateUnlockedIdsForProfile`
+runs that view through profile-scoped evaluation for you, so a `scope: 'device'` achievement still
+can't leak into a profile's own unlock namespace.
+
+## Building an achievements-catalog screen
+
+`getAchievementCatalogRows` computes the exact per-achievement row data an achievements-catalog
+screen renders — scope resolution, `unlockedAt`, `progress`, tier color, and a "device-wide
+achievement viewed from inside a profile's own tab" marker — so the screen's own
+`ACHIEVEMENT_CATALOG.map()` loop shrinks to handing the result straight to
+[`@tastic/hud`](https://github.com/jayrdeaton/react-native-hud)'s `AchievementRow`:
+
+```ts
+import { getAchievementCatalogRows } from '@tastic/achievements'
+
+const rows = getAchievementCatalogRows(
+  ACHIEVEMENT_CATALOG,
+  stats, // device-wide stats — used for any scope: 'device' achievement, regardless of which tab is open
+  effectiveStats, // this screen's own selected view: device-wide on "All Profiles", else one profile's view
+  unlockedAchievements,
+  selectedProfileId // null on the "All Profiles" tab
+)
+
+rows.forEach((row) => {
+  const locked = row.unlockedAt === undefined
+  render(<AchievementRow key={row.id} {...row} badgeColor={locked ? colors.outline : row.tierColor} />)
+})
+```
+
+Each row leaves the locked/unlocked badge color for the caller to resolve — that's a rendering
+decision, not something the engine picks. `unlockedLabel` (`'Unlocked today'` / `'Unlocked 1 day
+ago'` / `'Unlocked N days ago'`) comes from `defaultFormatUnlockedLabel`, a calendar-day diff so
+something unlocked at 11pm reads as "1 day ago" once the date rolls over rather than a full 24
+hours later; pass your own `formatUnlockedLabel` (and/or a `tierColors` map in place of
+`ACHIEVEMENT_TIER_COLORS`) as the options object to override either. `deviceMarker` is only ever
+true for a `scope: 'device'` achievement viewed from inside a specific profile's own tab — never on
+"All Profiles" itself, since there's no other tab there to distinguish it from.
+
+## Install
 
 ```bash
-npm run build && npx yalc publish   # in this repo
-npx yalc add @tastic/achievements   # in the consuming app
+npm install @tastic/achievements
 ```
 
 ## Peer dependencies
