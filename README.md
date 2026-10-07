@@ -2,7 +2,7 @@
 
 Achievement and stats engine for local-multiplayer React Native games. A tiered achievement catalog
 evaluated as pure predicates over whatever stats shape your game defines, per-profile unlock
-namespacing, AsyncStorage-backed persistence with a self-healing re-sweep, and the win/day-streak
+namespacing, Redux-backed persistence with a self-healing re-sweep, and the win/day-streak
 primitives your own outcome funnel composes.
 
 Deliberately headless: nothing here renders. The achievements *screen* is built from
@@ -59,8 +59,10 @@ evaluation, namespacing and persistence machinery.
   / `unlockedKey` to your own catalog and profile-stats-view function, so your app's own
   `achievementEngine.ts` shrinks to a five-line re-export instead of hand-rolling the same binding
   every game needs. See "Per-profile achievements" below.
-- **`useAchievements`** — the persistence hook: loads both blobs, runs the self-healing re-sweep,
-  and gives you one `recordOutcome` funnel that persists and reports what just unlocked.
+- **`createAchievementsSlice`** — your stats and unlock map as a Redux slice, persisted with the rest
+  of your store; it validates and migrates what rehydrates.
+- **`useAchievements`** — the hook over that slice: runs the self-healing re-sweep and gives you one
+  `recordOutcome` funnel that stores and reports what just unlocked.
 - **`mapUnlocksBySeat` / `broadcastDeviceUnlocks`** — `recordOutcome`'s `profiles` result is keyed by
   profile id; a local-multiplayer screen thinks in seats. These translate one into the other and
   layer a device-wide unlock onto every seat.
@@ -142,18 +144,43 @@ streak behavior without mocking the global `Date`.
 
 ## Wiring up persistence
 
-Mount `useAchievements` once, high enough in the tree to outlive individual screens (an expo-router
-app keeps prior screens mounted, so a per-screen copy could go stale or clobber a concurrent
-update), and share it through a context of your own.
+Stats and unlocks live in your app's Redux store (since 0.3.0; earlier versions wrote AsyncStorage
+directly). Create the slice once and mount it in your root reducer:
+
+```ts
+// redux/achievementsSlice.ts
+import { createAchievementsSlice } from '@tastic/achievements'
+
+const { actions, reducer } = createAchievementsSlice<StatsState>({
+  defaultStats: DEFAULT_STATS,
+  isValidStats, // optional
+  migrateStats: (stored) => ({ ...stored, profiles: stored.profiles ?? {} }) // optional
+})
+export const achievementsActions = actions
+export default reducer
+
+// redux/store.ts
+const rootReducer = combineReducers({ /* ... */, achievements })
+```
+
+The slice is mounted at `achievements` by default; pass `key` if you mount it elsewhere (it must
+match, since rehydration reads that key). When redux-persist rehydrates, the stored stats are
+checked: anything that isn't an object, or that your `isValidStats` rejects, falls back to
+`defaultStats`, and `migrateStats` upgrades the rest (the place to backfill a purely additive new
+field, with no schema-versioning machinery). A corrupt unlock map is dropped on its own, without
+taking valid stats with it. `isValidStats` is yours to supply because this package can't know
+`TStats` well enough to check it.
+
+Then call `useAchievements` once, high enough in the tree to outlive individual screens (a
+`GameStatsProvider` of your own), inside your Redux `Provider`/`PersistGate`:
 
 ```tsx
-import { ACHIEVEMENT_TIER_COLORS } from '@tastic/achievements'
+import { ACHIEVEMENT_TIER_COLORS, useAchievements } from '@tastic/achievements'
 
-const { stats, unlockedAchievements, loaded, recordOutcome, resetAll, removeProfile } = useAchievements({
-  namespace: 'lightcycles', // -> 'lightcycles.stats' and 'lightcycles.achievements'
+const { stats, unlockedAchievements, recordOutcome, resetAll, removeProfile } = useAchievements({
   catalog: ACHIEVEMENT_CATALOG,
-  defaultStats: DEFAULT_STATS,
-  isValidStats,
+  select: (state: RootState) => state.achievements,
+  actions: achievementsActions,
   profileViews: (stats) => mapValues(stats.profiles, toStatsView)
 })
 
@@ -165,15 +192,11 @@ const { device, profiles } = recordOutcome((prev) => applyRoundOutcome(prev, win
 })
 ```
 
-`recordOutcome` takes *your* updater, evaluates the catalog against the result, persists both blobs,
-and returns what newly unlocked — device-wide in `device`, and per profile id in `profiles`. A game
-that thinks in seats maps its own seat → profile id.
-
-Two storage keys, not one blob, so a corrupt or rejected stats blob can't take unlock history down
-with it. Both are validated on load; a corrupt one silently falls back to defaults. `isValidStats`
-is yours to supply because this package can't know `TStats` well enough to check it. `migrateStats`
-runs once per load on a validated blob — the place to backfill a purely-additive new field without
-any schema-versioning machinery.
+`recordOutcome` takes *your* updater, evaluates the catalog against the result, stores both, and
+returns what newly unlocked — device-wide in `device`, and per profile id in `profiles`. A game
+that thinks in seats maps its own seat → profile id. Every write reads the store's current state at
+call time, so two outcomes recorded back to back can't overwrite each other. `loaded` is still
+returned and is always `true`: `PersistGate` already holds rendering until the store has rehydrated.
 
 ### Seat-keyed unlocks for local multiplayer
 
@@ -206,10 +229,10 @@ returns a new object rather than mutating `bySeat`.
 
 ### The self-healing re-sweep
 
-On load, after both blobs are read, every achievement the stored stats *already clear* but that
-isn't recorded yet gets backfilled and persisted. This covers two real cases: a catalog gaining a
-new achievement that existing players already qualify for, and the write-skew where the stats write
-landed but the achievements write didn't. Nothing is written back when the map is already complete.
+When `useAchievements` mounts, every achievement the stored stats *already clear* but that isn't
+recorded yet gets backfilled into the unlock map: a catalog gaining a new achievement that existing
+players already qualify for unlocks it right away. Nothing is dispatched when the map is already
+complete.
 
 ## Per-profile achievements
 
@@ -295,11 +318,10 @@ npm install @tastic/achievements
 
 ## Peer dependencies
 
-- `react` >=19.0.0 — required (the hook; the engine itself is plain functions)
-- `@react-native-async-storage/async-storage` >=1.18.0 — **optional**
-  (`peerDependenciesMeta`). Resolved lazily inside `resolveStorage`, so importing this package never
-  throws in a plain-Node context (Jest, a web build). Omit it entirely if you pass your own
-  `storage`, or only use the pure engine — without it, persistence silently no-ops and the game
-  still runs.
+- `react` >=19.0.0 and `react-redux` >=9.0.0 — the hook reads and writes your store
+- `@rific/core` >=0.2.0 — `createAchievementsSlice` is built on its `createSettingsSlice`
+
+The engine itself is plain functions with no dependencies. AsyncStorage is no longer a dependency:
+persistence is your store's redux-persist setup.
 
 No React Native, Paper, Skia or Reanimated peers: nothing here renders.

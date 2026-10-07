@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working in this repository.
 
 # @tastic/achievements
 
-Achievement and stats engine for local-multiplayer React Native games — a generic tiered achievement catalog evaluated as pure predicates over whatever stats shape a game defines, per-profile unlock namespacing, AsyncStorage-backed persistence with a self-healing re-sweep, and the outcome-record/streak primitives a game's own funnel composes.
+Achievement and stats engine for local-multiplayer React Native games — a generic tiered achievement catalog evaluated as pure predicates over whatever stats shape a game defines, per-profile unlock namespacing, Redux-backed persistence with a self-healing re-sweep, and the outcome-record/streak primitives a game's own funnel composes.
 
 Headless by design: nothing here renders. The achievements *screen* is built from `@tastic/hud`'s `BaseStatsScreen`/`StatSection`/`StatRow`/`AchievementRow`, which take precomputed values (`badgeColor`, `unlockedLabel`, `progress`) and hold no opinion about how they were derived. This package is the deriving half. The two are deliberately not merged — see the extraction rationale below.
 
@@ -53,11 +53,11 @@ src/
   achievementEngine.ts      - evaluateUnlockedIds, newlyUnlocked, unlockedKey/parseUnlockedKey, isAchievementUnlocked, achievementUnlockedAt, removeProfileUnlocks, mapUnlocksBySeat/broadcastDeviceUnlocks (see 2026-09-18 below)
   catalogRows.ts            - getAchievementCatalogRows/defaultFormatUnlockedLabel/AchievementCatalogRow — pure per-row computation for an achievements-screen catalog list, no JSX (see 2026-09-18 below)
   achievementsValidation.ts - DEFAULT_UNLOCKED_ACHIEVEMENTS, isValidUnlockedAchievements
-  storage.ts                - AchievementsStorage interface + resolveStorage (lazy, optional AsyncStorage)
-  useAchievements.ts        - the persistence hook: load + self-healing backfill + recordOutcome/resetAll/removeProfile
+  achievementsSlice.ts      - createAchievementsSlice: { stats, unlocked } as a Redux slice (on @rific/core's createSettingsSlice), sanitizing what rehydrates
+  useAchievements.ts        - the hook over that slice: mount-time self-healing backfill + recordOutcome/resetAll/removeProfile
   __tests__/
     fixtures.ts             - TestStats/TEST_CATALOG/applyTestOutcome — a miniature consumer, exercising the exact composition pattern the README documents
-    achievementEngine.test.ts, achievementsValidation.test.ts, catalogRows.test.ts, outcomeRecord.test.ts, storage.test.ts, streaks.test.ts, tieredFamily.test.ts, useAchievements.test.ts
+    achievementEngine.test.ts, achievementsValidation.test.ts, catalogRows.test.ts, outcomeRecord.test.ts, streaks.test.ts, tieredFamily.test.ts, achievementsSlice.test.ts, useAchievements.test.tsx
 ```
 
 Generalized from LightCycles' own `src/constants/achievements.ts`, `src/utils/achievementEngine.ts`, `src/utils/statsEngine.ts` and `src/hooks/useGameStats.tsx`. LightCycles' `StatsState` was used only as an *example* of a game-supplied shape — deliberately not copied, since its `vsCpu`/`twoPlayer`/`colors` fields are LightCycles-specific.
@@ -66,8 +66,7 @@ Generalized from LightCycles' own `src/constants/achievements.ts`, `src/utils/ac
 
 - **No `StatsState` in this package.** `AchievementDefinition<TStats>` is generic and nothing here ever inspects `TStats`. What a game tracks varies too much to share; what's identical is the bookkeeping (an outcome record, a win streak, a day streak) and the machinery (evaluation, namespacing, persistence).
 - **`applyDayPlayed` never returns its argument**, even on the same-day no-op path — it always builds a fresh object with exactly its own four fields. `prev` is typed structurally, so the README's `{...stats, ...applyDayPlayed(stats)}` composition passes the *whole* stats object in; returning it verbatim spread every other field back over itself and silently reverted the round just recorded. This was caught by the test fixture's own funnel and is guarded by a dedicated test in `streaks.test.ts`.
-- **Two storage keys, not one blob** (`<namespace>.stats` / `<namespace>.achievements`), so a corrupt or rejected stats blob can't take unlock history down with it.
-- **AsyncStorage is an optional peer**, resolved lazily inside `resolveStorage` rather than imported at module scope — same pattern as `@tastic/profile`'s `expo-modules-core` bridge. That's what keeps importing this package from throwing under Jest's plain-Node environment. Absent, it falls back to a no-op store: the game runs, it just doesn't persist.
+- **Persistence is the app's Redux store (2026-10-07, 0.3.0).** Jay moved everything persisted into Redux fleet-wide; the old AsyncStorage path (`storage.ts`/`resolveStorage`, two `<namespace>.stats`/`<namespace>.achievements` keys, the hook's own async load and `loaded` flag) is gone, and old saved stats were deliberately not imported (players start fresh). `createAchievementsSlice` keeps the old load's guarantees on REHYDRATE: non-object or `isValidStats`-rejected stats fall back to `defaultStats`, `migrateStats` runs on the rest, and a corrupt unlock map is dropped without taking valid stats with it. `useAchievements` reads the store's current state at call time (`useStore().getState()`), not a render snapshot, so back-to-back `recordOutcome` calls can't overwrite each other (the old closure-over-state version could). `loaded` stays in the result, always `true`, so callers needed no change. ArcheryDuel/HexFleet/Minesweeper/OttosOrchard still pin the old AsyncStorage versions (^0.1.1) and keep working until migrated.
 - **`scope: 'device'` achievements are skipped entirely under profile evaluation**, so a device-only achievement can never produce a bogus `profileId:` key — callers can treat "in this set" as immediately eligible for a profile-scoped `unlockedKey` with no further scope-checking.
 - **`isAchievementUnlocked` does not fall back to the device-wide key for a profile.** A profile that hasn't earned something reads as locked even if someone else on the device has.
 - **Options are read through a ref inside the hook's callbacks**, so a host passing an inline catalog or closure doesn't get a new `recordOutcome` identity every render, and the one-shot load effect never re-runs.
@@ -98,19 +97,18 @@ From `src/index.ts` — see the README for usage of each.
 - Engine: `evaluateUnlockedIds`, `newlyUnlocked`, `unlockedKey`, `parseUnlockedKey`, `isAchievementUnlocked`, `achievementUnlockedAt`, `removeProfileUnlocks`, `mapUnlocksBySeat`, `broadcastDeviceUnlocks`
 - Catalog rows: `AchievementCatalogRow`, `FormatUnlockedLabel`, `defaultFormatUnlockedLabel`, `getAchievementCatalogRows`, `GetAchievementCatalogRowsOptions`
 - Validation: `DEFAULT_UNLOCKED_ACHIEVEMENTS`, `isValidUnlockedAchievements`
-- Persistence: `useAchievements`, `UseAchievementsOptions`, `UseAchievementsResult`, `RecordOutcomeResult`, `AchievementsStorage`
+- Persistence: `createAchievementsSlice`, `CreateAchievementsSliceOptions`, `AchievementsSlice`, `AchievementsActions`, `AchievementsState`, `useAchievements`, `UseAchievementsOptions`, `UseAchievementsResult`, `RecordOutcomeResult`
 
 ## Peer Dependencies
 
-- `react` >=19.0.0 — required (only `useAchievements` needs it; the engine is plain functions)
-- `@react-native-async-storage/async-storage` >=1.18.0 — **optional** (`peerDependenciesMeta`), lazily required; also carried in `devDependencies` to satisfy the shared config's `package-json/specify-peers-locally` rule
+- `react` >=19.0.0 and `react-redux` >=9.0.0 (`useAchievements`), `@rific/core` >=0.2.0 (`createAchievementsSlice` builds on its `createSettingsSlice`; 0.2.0 is the first with its REHYDRATE backfill). All three also carried in `devDependencies`, plus `@reduxjs/toolkit` for the tests' `configureStore`. The engine is plain functions.
 
 No React Native, Paper, Skia or Reanimated peers — nothing here renders.
 
 ## Testing
 
 - Framework: Jest (`@infinitetoken/jest-config/react-native`), jsdom environment
-- 8 suites (test count last measured at 101 across 7, before `catalogRows.test.ts` landed — see 2026-09-18 above); no `__mocks__/` directory is needed (nothing imports a native module eagerly — `storage.test.ts` uses `jest.isolateModules` + `jest.doMock` to exercise both the resolved and absent AsyncStorage paths)
+- 8 suites, 132 tests (2026-10-07); no `__mocks__/` directory is needed. The hook tests run against a real `configureStore` holding just the slice, seeded through a REHYDRATE action the way redux-persist would.
 - Coverage (measured 2026-09-02): **99.55 / 95.09 / 89.06 / 100** (statements/branches/functions/lines), against the shared preset's 70% floor — no local `coverageThreshold` override
 - `src/__tests__/fixtures.ts` is a miniature consumer of the whole package (its own `TestStats`, catalog and `applyTestOutcome` funnel), so the tests exercise the exact composition the README documents rather than a synthetic shape
 

@@ -1,7 +1,7 @@
 {
   "name": "@tastic/achievements",
   "version": "0.2.0",
-  "description": "Achievement and stats engine for local-multiplayer React Native games: a generic tiered achievement catalog evaluated as pure predicates over whatever stats shape a game defines, per-profile unlock namespacing, AsyncStorage-backed persistence with a self-healing re-sweep, and the win/day-streak primitives a game's own outcome funnel composes",
+  "description": "Achievement and stats engine for local-multiplayer React Native games: a generic tiered achievement catalog evaluated as pure predicates over whatever stats shape a game defines, per-profile unlock namespacing, Redux-backed persistence with a self-healing re-sweep, and the win/day-streak primitives a game's own outcome funnel composes",
   "keywords": [
     "react-native",
     "expo",
@@ -65,7 +65,8 @@
     "@infinitetoken/eslint-config": "0.2.0",
     "@infinitetoken/jest-config": "^0.4.0",
     "@infinitetoken/tsconfig": "^0.5.0",
-    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@reduxjs/toolkit": "^2.13.0",
+    "@rific/core": "^0.3.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^30.0.0",
@@ -78,17 +79,14 @@
     "prettier": "^3.8.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-redux": "^9.3.0",
     "tsup": "^8.0.0",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
-    "@react-native-async-storage/async-storage": ">=1.18.0",
-    "react": ">=19.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@react-native-async-storage/async-storage": {
-      "optional": true
-    }
+    "@rific/core": ">=0.2.0",
+    "react": ">=19.0.0",
+    "react-redux": ">=9.0.0"
   },
   "publishConfig": {
     "access": "public"

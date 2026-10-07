@@ -1,36 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
+import { useDispatch, useSelector, useStore } from 'react-redux'
 
 import { newlyUnlocked, removeProfileUnlocks, unlockedKey } from './achievementEngine'
-import { DEFAULT_UNLOCKED_ACHIEVEMENTS, isValidUnlockedAchievements } from './achievementsValidation'
-import { AchievementsStorage, resolveStorage } from './storage'
+import { AchievementsActions, AchievementsState } from './achievementsSlice'
 import { AchievementDefinition, UnlockedAchievementsState } from './types'
 
-export interface UseAchievementsOptions<TStats> {
-  // Storage-key prefix, one per game (e.g. 'lightcycles' -> 'lightcycles.stats' and
-  // 'lightcycles.achievements'). Two separate keys, not one blob, so a corrupt or rejected stats
-  // blob can't take the unlock history down with it.
-  namespace: string
+export interface UseAchievementsOptions<TStats, TRoot> {
   catalog: AchievementDefinition<TStats>[]
-  defaultStats: TStats
-  // The game's own validator for its own stats shape — this package can't know TStats well enough
-  // to check it. A blob that fails this is discarded in favor of defaultStats, same as a corrupt
-  // one. Omit to accept any parsed JSON object.
-  isValidStats?: (value: unknown) => boolean
+  // Where this game's achievements slice (createAchievementsSlice) lives in its root state, e.g.
+  // `(state: RootState) => state.achievements`.
+  select: (state: TRoot) => AchievementsState<TStats>
+  // That slice's own actions.
+  actions: AchievementsActions<TStats>
   // Maps a stats blob to the per-profile views achievements should ALSO be evaluated against, keyed
   // by profile id. Omit entirely for a game with no profile-scoped achievements — everything then
   // lives in the device-wide namespace. See the README's per-profile section.
   profileViews?: (stats: TStats) => Record<string, TStats>
-  // Overrides the AsyncStorage-backed default — for tests, or a game persisting somewhere else.
-  storage?: AchievementsStorage
-  // Runs once per load, after a stored blob is validated and before anything is evaluated against
-  // it. The place to backfill a purely-additive new field onto an older stored shape, which avoids
-  // any schema-versioning machinery for the common case.
-  migrateStats?: (stats: TStats) => TStats
 }
 
 export interface RecordOutcomeResult<TStats> {
-  // The updated stats, already persisted — returned so a caller doesn't have to wait a render to
-  // read what it just recorded.
+  // The updated stats, already in the store — returned so a caller doesn't have to wait a render
+  // to read what it just recorded.
   stats: TStats
   // Achievements that unlocked device-wide on this update, in catalog order. Empty if none did.
   device: AchievementDefinition<TStats>[]
@@ -42,13 +32,13 @@ export interface RecordOutcomeResult<TStats> {
 export interface UseAchievementsResult<TStats> {
   stats: TStats
   unlockedAchievements: UnlockedAchievementsState
-  // False until the stored blobs have been read (or failed to read) — an achievements screen can
-  // hold off rendering "0 games played" over real, still-loading data.
+  // Always true: the data lives in the Redux store, which the app's PersistGate holds rendering on
+  // until it has rehydrated. Kept so existing callers that gate on it need no change.
   loaded: boolean
   // The single funnel: hand it the game's own pure stats updater, and it evaluates the catalog
-  // against the result, persists both blobs, and reports what newly unlocked.
+  // against the result, stores both, and reports what newly unlocked.
   recordOutcome: (update: (prev: TStats) => TStats) => RecordOutcomeResult<TStats>
-  // Wipes both stored keys back to defaults. Irreversible — callers are expected to confirm first.
+  // Wipes stats and unlocks back to defaults. Irreversible — callers are expected to confirm first.
   resetAll: () => void
   // Drops one profile's unlock keys, so a deleted profile leaves no orphaned unlock history behind.
   // The game's own stats blob is the game's to prune, via the optional updater — pass one that
@@ -58,8 +48,8 @@ export interface UseAchievementsResult<TStats> {
 
 // Achievements `stats` clears that aren't recorded yet, device-wide and across every profile view,
 // merged into one map. Covers a catalog gaining a new achievement that existing stats already
-// clear, and the case where the stats write succeeded but the achievements write didn't. Returns
-// the SAME reference back when nothing was missing, so callers can skip a pointless write.
+// clear. Returns the SAME reference back when nothing was missing, so callers can skip a pointless
+// write.
 function backfillUnlocked<TStats>(catalog: AchievementDefinition<TStats>[], stats: TStats, unlocked: UnlockedAchievementsState, profileViews: Record<string, TStats>, now: number): UnlockedAchievementsState {
   const additions: UnlockedAchievementsState = {}
 
@@ -76,82 +66,40 @@ function backfillUnlocked<TStats>(catalog: AchievementDefinition<TStats>[], stat
   return Object.keys(additions).length === 0 ? unlocked : { ...unlocked, ...additions }
 }
 
-// Single source of truth for one game's stats + achievement unlocks. Mount it once, high enough in
-// the tree to outlive individual screens (an expo-router app keeps prior screens mounted, so a
-// per-screen copy could go stale or clobber a concurrent update), and share it through a context of
-// the app's own.
-export function useAchievements<TStats>(options: UseAchievementsOptions<TStats>): UseAchievementsResult<TStats> {
-  const { namespace, storage } = options
-
-  const [stats, setStats] = useState<TStats>(options.defaultStats)
-  const [unlockedAchievements, setUnlockedAchievements] = useState<UnlockedAchievementsState>(DEFAULT_UNLOCKED_ACHIEVEMENTS)
-  const [loaded, setLoaded] = useState(false)
-
-  // Every other option is read through this ref inside the callbacks below, so a host passing an
-  // inline catalog/closure (rather than a module-level constant) doesn't get a new recordOutcome
-  // identity every render — and, more importantly, so the one-shot load effect never re-runs on
-  // such a change.
+// One game's stats + achievement unlocks, read from and written to its createAchievementsSlice slice.
+// Mount it once, high enough in the tree to outlive individual screens (a game's GameStatsProvider),
+// so the mount-time re-sweep below runs once. Every write reads the store's CURRENT state at call
+// time (not this render's snapshot), so two outcomes recorded back to back can't overwrite each other.
+export function useAchievements<TStats, TRoot = unknown>(options: UseAchievementsOptions<TStats, TRoot>): UseAchievementsResult<TStats> {
+  const { stats, unlocked } = useSelector(options.select)
+  const store = useStore<TRoot>()
+  const dispatch = useDispatch()
   const latest = useRef(options)
   useEffect(() => {
     latest.current = options
   })
 
-  const statsKey = `${namespace}.stats`
-  const achievementsKey = `${namespace}.achievements`
+  const current = useCallback(() => latest.current.select(store.getState()), [store])
 
-  const hasLoadedRef = useRef(false)
+  // Self-healing re-sweep, once per mount: a catalog that gained an achievement existing stats
+  // already clear records it now, rather than waiting for the next outcome to notice.
   useEffect(() => {
-    if (hasLoadedRef.current) return
-    hasLoadedRef.current = true
-    const store = resolveStorage(storage)
-
-    Promise.all([store.getItem(statsKey), store.getItem(achievementsKey)])
-      .then(([storedStats, storedAchievements]) => {
-        const current = latest.current
-        let loadedStats = current.defaultStats
-        if (storedStats) {
-          try {
-            const parsed: unknown = JSON.parse(storedStats)
-            const valid = parsed !== null && typeof parsed === 'object' && (current.isValidStats ? current.isValidStats(parsed) : true)
-            if (valid) loadedStats = current.migrateStats ? current.migrateStats(parsed as TStats) : (parsed as TStats)
-          } catch {
-            // Corrupt/stale blob — keep defaults.
-          }
-        }
-
-        let loadedAchievements = DEFAULT_UNLOCKED_ACHIEVEMENTS
-        if (storedAchievements) {
-          try {
-            const parsed: unknown = JSON.parse(storedAchievements)
-            if (isValidUnlockedAchievements(parsed)) loadedAchievements = parsed
-          } catch {
-            // Corrupt/stale blob — keep defaults.
-          }
-        }
-
-        const views = current.profileViews ? current.profileViews(loadedStats) : {}
-        const reconciled = backfillUnlocked(current.catalog, loadedStats, loadedAchievements, views, Date.now())
-        if (reconciled !== loadedAchievements) store.setItem(achievementsKey, JSON.stringify(reconciled)).catch(() => {})
-
-        setStats(loadedStats)
-        setUnlockedAchievements(reconciled)
-        setLoaded(true)
-      })
-      .catch(() => {
-        // Unavailable storage — the defaults already in state are a complete, silent fallback.
-        setLoaded(true)
-      })
-  }, [statsKey, achievementsKey, storage])
+    const { catalog, profileViews, actions } = latest.current
+    const state = current()
+    const views = profileViews ? profileViews(state.stats) : {}
+    const reconciled = backfillUnlocked(catalog, state.stats, state.unlocked, views, Date.now())
+    if (reconciled !== state.unlocked) dispatch(actions.update({ unlocked: reconciled }))
+  }, [current, dispatch])
 
   const recordOutcome = useCallback(
     (update: (prev: TStats) => TStats): RecordOutcomeResult<TStats> => {
-      const current = latest.current
-      const store = resolveStorage(current.storage)
-      const nextStats = update(stats)
+      const { catalog, profileViews, actions } = latest.current
+      const state = current()
+      const nextStats = update(state.stats)
       const now = Date.now()
 
-      const device = newlyUnlocked(current.catalog, nextStats, unlockedAchievements)
-      const views = current.profileViews ? current.profileViews(nextStats) : {}
+      const device = newlyUnlocked(catalog, nextStats, state.unlocked)
+      const views = profileViews ? profileViews(nextStats) : {}
 
       const additions: UnlockedAchievementsState = {}
       device.forEach((achievement) => {
@@ -160,7 +108,7 @@ export function useAchievements<TStats>(options: UseAchievementsOptions<TStats>)
 
       const profiles: Record<string, AchievementDefinition<TStats>[]> = {}
       for (const [profileId, view] of Object.entries(views)) {
-        const unlockedForProfile = newlyUnlocked(current.catalog, view, unlockedAchievements, profileId)
+        const unlockedForProfile = newlyUnlocked(catalog, view, state.unlocked, profileId)
         if (unlockedForProfile.length === 0) continue
         profiles[profileId] = unlockedForProfile
         unlockedForProfile.forEach((achievement) => {
@@ -168,46 +116,27 @@ export function useAchievements<TStats>(options: UseAchievementsOptions<TStats>)
         })
       }
 
-      setStats(nextStats)
-      store.setItem(statsKey, JSON.stringify(nextStats)).catch(() => {})
-
-      if (Object.keys(additions).length > 0) {
-        const nextUnlocked = { ...unlockedAchievements, ...additions }
-        setUnlockedAchievements(nextUnlocked)
-        store.setItem(achievementsKey, JSON.stringify(nextUnlocked)).catch(() => {})
-      }
-
+      dispatch(actions.update(Object.keys(additions).length > 0 ? { stats: nextStats, unlocked: { ...state.unlocked, ...additions } } : { stats: nextStats }))
       return { stats: nextStats, device, profiles }
     },
-    [stats, unlockedAchievements, statsKey, achievementsKey]
+    [current, dispatch]
   )
 
   const resetAll = useCallback(() => {
-    const store = resolveStorage(latest.current.storage)
-    setStats(latest.current.defaultStats)
-    setUnlockedAchievements(DEFAULT_UNLOCKED_ACHIEVEMENTS)
-    store.removeItem(statsKey).catch(() => {})
-    store.removeItem(achievementsKey).catch(() => {})
-  }, [statsKey, achievementsKey])
+    dispatch(latest.current.actions.reset())
+  }, [dispatch])
 
   const removeProfile = useCallback(
     (profileId: string, update?: (prev: TStats) => TStats) => {
-      const store = resolveStorage(latest.current.storage)
-
-      if (update) {
-        const nextStats = update(stats)
-        setStats(nextStats)
-        store.setItem(statsKey, JSON.stringify(nextStats)).catch(() => {})
-      }
-
-      const nextUnlocked = removeProfileUnlocks(unlockedAchievements, profileId)
-      if (nextUnlocked !== unlockedAchievements) {
-        setUnlockedAchievements(nextUnlocked)
-        store.setItem(achievementsKey, JSON.stringify(nextUnlocked)).catch(() => {})
-      }
+      const state = current()
+      const patch: Partial<AchievementsState<TStats>> = {}
+      if (update) patch.stats = update(state.stats)
+      const nextUnlocked = removeProfileUnlocks(state.unlocked, profileId)
+      if (nextUnlocked !== state.unlocked) patch.unlocked = nextUnlocked
+      if (patch.stats !== undefined || patch.unlocked !== undefined) dispatch(latest.current.actions.update(patch))
     },
-    [stats, unlockedAchievements, statsKey, achievementsKey]
+    [current, dispatch]
   )
 
-  return { stats, unlockedAchievements, loaded, recordOutcome, resetAll, removeProfile }
+  return { stats, unlockedAchievements: unlocked, loaded: true, recordOutcome, resetAll, removeProfile }
 }
