@@ -195,8 +195,8 @@ const { device, profiles } = recordOutcome((prev) => applyRoundOutcome(prev, win
 `recordOutcome` takes *your* updater, evaluates the catalog against the result, stores both, and
 returns what newly unlocked — device-wide in `device`, and per profile id in `profiles`. A game
 that thinks in seats maps its own seat → profile id. Every write reads the store's current state at
-call time, so two outcomes recorded back to back can't overwrite each other. `loaded` is still
-returned and is always `true`: `PersistGate` already holds rendering until the store has rehydrated.
+call time, so two outcomes recorded back to back can't overwrite each other. There is no loading
+state: `PersistGate` already holds rendering until the store has rehydrated.
 
 ### Seat-keyed unlocks for local multiplayer
 

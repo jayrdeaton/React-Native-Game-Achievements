@@ -8,7 +8,7 @@ Achievement and stats engine for local-multiplayer React Native games — a gene
 
 Headless by design: nothing here renders. The achievements *screen* is built from `@tastic/hud`'s `BaseStatsScreen`/`StatSection`/`StatRow`/`AchievementRow`, which take precomputed values (`badgeColor`, `unlockedLabel`, `progress`) and hold no opinion about how they were derived. This package is the deriving half. The two are deliberately not merged — see the extraction rationale below.
 
-Part of the `@tastic`/`@rific` package ecosystem. Not yet published to npm.
+Part of the `@tastic`/`@rific` package ecosystem. Published to npm as `@tastic/achievements`.
 
 ## Commands
 
@@ -17,7 +17,7 @@ npm run build        # tsup, outputs CJS + ESM + types to dist/
 npm run build:watch  # tsup --watch
 npm run lint         # ESLint
 npm run fix          # ESLint --fix
-npm test             # Jest (101 tests)
+npm test             # Jest (132 tests)
 npm run test:watch   # Jest in watch mode
 npm run typecheck    # TypeScript type check (tsc --noEmit)
 npm run verify       # lint + test + typecheck + build, in that order
@@ -66,10 +66,10 @@ Generalized from LightCycles' own `src/constants/achievements.ts`, `src/utils/ac
 
 - **No `StatsState` in this package.** `AchievementDefinition<TStats>` is generic and nothing here ever inspects `TStats`. What a game tracks varies too much to share; what's identical is the bookkeeping (an outcome record, a win streak, a day streak) and the machinery (evaluation, namespacing, persistence).
 - **`applyDayPlayed` never returns its argument**, even on the same-day no-op path — it always builds a fresh object with exactly its own four fields. `prev` is typed structurally, so the README's `{...stats, ...applyDayPlayed(stats)}` composition passes the *whole* stats object in; returning it verbatim spread every other field back over itself and silently reverted the round just recorded. This was caught by the test fixture's own funnel and is guarded by a dedicated test in `streaks.test.ts`.
-- **Persistence is the app's Redux store (2026-10-07, 0.3.0).** Jay moved everything persisted into Redux fleet-wide; the old AsyncStorage path (`storage.ts`/`resolveStorage`, two `<namespace>.stats`/`<namespace>.achievements` keys, the hook's own async load and `loaded` flag) is gone, and old saved stats were deliberately not imported (players start fresh). `createAchievementsSlice` keeps the old load's guarantees on REHYDRATE: non-object or `isValidStats`-rejected stats fall back to `defaultStats`, `migrateStats` runs on the rest, and a corrupt unlock map is dropped without taking valid stats with it. `useAchievements` reads the store's current state at call time (`useStore().getState()`), not a render snapshot, so back-to-back `recordOutcome` calls can't overwrite each other (the old closure-over-state version could). `loaded` stays in the result, always `true`, so callers needed no change. ArcheryDuel/HexFleet/Minesweeper/OttosOrchard still pin the old AsyncStorage versions (^0.1.1) and keep working until migrated.
+- **Persistence is the app's Redux store (2026-10-07, 0.3.0).** Jay moved everything persisted into Redux fleet-wide; the old AsyncStorage path (`storage.ts`/`resolveStorage`, two `<namespace>.stats`/`<namespace>.achievements` keys, the hook's own async load and `loaded` flag) is gone, and old saved stats were deliberately not imported (players start fresh). `createAchievementsSlice` keeps the old load's guarantees on REHYDRATE: non-object or `isValidStats`-rejected stats fall back to `defaultStats`, `migrateStats` runs on the rest, and a corrupt unlock map is dropped without taking valid stats with it. `useAchievements` reads the store's current state at call time (`useStore().getState()`), not a render snapshot, so back-to-back `recordOutcome` calls can't overwrite each other (the old closure-over-state version could). `loaded` was kept (always `true`) in 0.3.0 and then dropped (2026-10-08) once no game read it. ArcheryDuel/HexFleet/Minesweeper/OttosOrchard still pin the old AsyncStorage versions (^0.1.1) and keep working until migrated.
 - **`scope: 'device'` achievements are skipped entirely under profile evaluation**, so a device-only achievement can never produce a bogus `profileId:` key — callers can treat "in this set" as immediately eligible for a profile-scoped `unlockedKey` with no further scope-checking.
 - **`isAchievementUnlocked` does not fall back to the device-wide key for a profile.** A profile that hasn't earned something reads as locked even if someone else on the device has.
-- **Options are read through a ref inside the hook's callbacks**, so a host passing an inline catalog or closure doesn't get a new `recordOutcome` identity every render, and the one-shot load effect never re-runs.
+- **Options are read through a ref inside the hook's callbacks**, so a host passing an inline catalog, selector or closure doesn't get a new `recordOutcome` identity every render, and the mount-time re-sweep never re-runs.
 
 ## 2026-09-18 — two extractions from a fleet-wide sibling-app drift audit
 

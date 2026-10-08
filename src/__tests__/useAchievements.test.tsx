@@ -30,11 +30,10 @@ function render(store = makeStore(), overrides: Partial<UseAchievementsOptions<T
 }
 
 describe('useAchievements reading the store', () => {
-  it('exposes the slice state, always loaded', () => {
+  it('exposes the slice state', () => {
     const { result } = render()
     expect(result.current.stats).toEqual(DEFAULT_TEST_STATS)
     expect(result.current.unlockedAchievements).toEqual({})
-    expect(result.current.loaded).toBe(true)
   })
 })
 

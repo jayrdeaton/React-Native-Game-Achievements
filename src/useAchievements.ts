@@ -32,9 +32,6 @@ export interface RecordOutcomeResult<TStats> {
 export interface UseAchievementsResult<TStats> {
   stats: TStats
   unlockedAchievements: UnlockedAchievementsState
-  // Always true: the data lives in the Redux store, which the app's PersistGate holds rendering on
-  // until it has rehydrated. Kept so existing callers that gate on it need no change.
-  loaded: boolean
   // The single funnel: hand it the game's own pure stats updater, and it evaluates the catalog
   // against the result, stores both, and reports what newly unlocked.
   recordOutcome: (update: (prev: TStats) => TStats) => RecordOutcomeResult<TStats>
@@ -138,5 +135,5 @@ export function useAchievements<TStats, TRoot = unknown>(options: UseAchievement
     [current, dispatch]
   )
 
-  return { stats, unlockedAchievements: unlocked, loaded: true, recordOutcome, resetAll, removeProfile }
+  return { stats, unlockedAchievements: unlocked, recordOutcome, resetAll, removeProfile }
 }
