@@ -65,7 +65,7 @@ evaluation, namespacing and persistence machinery.
   `recordOutcome` funnel that stores and reports what just unlocked.
 - **`mapUnlocksBySeat` / `broadcastDeviceUnlocks`**: `recordOutcome`'s `profiles` result is keyed by
   profile id; a local-multiplayer screen thinks in seats. These translate one into the other and
-  layer a device-wide unlock onto every seat.
+  add the device-wide unlocks each seat should actually be told about.
 - **`getAchievementCatalogRows` / `defaultFormatUnlockedLabel`**: the per-achievement
   scope/`unlockedAt`/`progress`/tier-color computation an achievements-catalog screen's own
   `ACHIEVEMENT_CATALOG.map()` loop hand-rolls, plus the "Unlocked N days ago" label formatter.
@@ -202,8 +202,7 @@ state: `PersistGate` already holds rendering until the store has rehydrated.
 
 `recordOutcome`'s result has no notion of seats - its `profiles` map is keyed by profile id - but a
 two-player screen thinks in seats. `mapUnlocksBySeat` translates one into the other, and
-`broadcastDeviceUnlocks` layers a device-wide unlock (like "first game ever", which no single seat
-owns) onto every seat afterward:
+`broadcastDeviceUnlocks` then adds the device-wide unlocks each seat should be told about:
 
 ```ts
 import { broadcastDeviceUnlocks, mapUnlocksBySeat } from '@tastic/achievements'
@@ -212,7 +211,7 @@ const { device, profiles } = recordOutcome((prev) => applyRoundOutcome(prev, win
 
 const seats = [1, 2] as const
 const bySeat = mapUnlocksBySeat(seats, seatProfileIds, profiles) // seatProfileIds: Partial<Record<1 | 2, string>>
-const withDevice = broadcastDeviceUnlocks(seats, bySeat, device)
+const withDevice = broadcastDeviceUnlocks(seats, bySeat, device, seatProfileIds)
 
 seats.forEach((seat) => {
   ;(withDevice[seat] ?? []).forEach((achievement) => {
@@ -223,8 +222,16 @@ seats.forEach((seat) => {
 
 `mapUnlocksBySeat` only sets a key for a seat that both has a profile selected *and* actually
 unlocked something this round - a seat that unlocked nothing gets no entry at all, not an empty
-array. `broadcastDeviceUnlocks` always appends `device` after a seat's own unlocks (`[...own,
-...device]`), never the reverse, since that's the toast order a player actually sees - and it
+array.
+
+`device` evaluates the whole catalog against the device-wide stats, so it also holds ordinary
+achievements that everyone's combined play just crossed. `broadcastDeviceUnlocks` therefore gives a
+seat with a profile only the `scope: 'device'` entries (its own copy of anything else already
+arrives through `bySeat`), and gives a guest seat all of `device`, since a guest's progress is the
+device's. Skipping that filter toasts a profile's first-round achievements twice and can
+congratulate one profile for a total another profile reached. Single-seat modes use it too: pass
+just that seat (`broadcastDeviceUnlocks([1], bySeat, device, seatProfileIds)[1] ?? []`). Own unlocks
+always come first (`[...own, ...device]`), since that's the toast order a player sees, and it
 returns a new object rather than mutating `bySeat`.
 
 ### The self-healing re-sweep

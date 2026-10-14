@@ -176,25 +176,76 @@ describe('broadcastDeviceUnlocks', () => {
 
   it('returns a plain copy of bySeat when nothing device-wide unlocked', () => {
     const bySeat = { 1: [firstGame] }
-    const result = broadcastDeviceUnlocks([1, 2], bySeat, [])
+    const result = broadcastDeviceUnlocks([1, 2], bySeat, [], { 1: 'alice' })
     expect(result).toEqual(bySeat)
     expect(result).not.toBe(bySeat)
   })
 
-  it('appends a device-wide unlock onto every seat, including one with no prior unlocks', () => {
-    const result = broadcastDeviceUnlocks([1, 2], {}, [flawlessDebut])
+  it('gives a guest seat every device-wide unlock, since its progress is the device', () => {
+    const result = broadcastDeviceUnlocks([1, 2], {}, [firstGame, flawlessDebut], undefined)
+    expect(result).toEqual({ 1: [firstGame, flawlessDebut], 2: [firstGame, flawlessDebut] })
+  })
+
+  it('gives a seat with a profile only the device-scoped unlocks', () => {
+    const result = broadcastDeviceUnlocks([1, 2], {}, [firstGame, flawlessDebut], { 1: 'alice', 2: 'bob' })
     expect(result).toEqual({ 1: [flawlessDebut], 2: [flawlessDebut] })
   })
 
+  it('handles a profile seat and a guest seat in the same round', () => {
+    const result = broadcastDeviceUnlocks([1, 2], { 1: [firstGame] }, [firstGame, flawlessDebut], { 1: 'alice' })
+    expect(result).toEqual({ 1: [firstGame, flawlessDebut], 2: [firstGame, flawlessDebut] })
+  })
+
+  it('leaves out a profile seat with nothing to announce instead of giving it an empty list', () => {
+    const result = broadcastDeviceUnlocks([1], {}, [firstGame], { 1: 'alice' })
+    expect(result).toEqual({})
+  })
+
   it('appends device-wide unlocks AFTER a seat own profile-scoped unlocks', () => {
-    const result = broadcastDeviceUnlocks([1, 2], { 1: [firstGame] }, [flawlessDebut])
+    const result = broadcastDeviceUnlocks([1, 2], { 1: [firstGame] }, [flawlessDebut], { 1: 'alice' })
     expect(result).toEqual({ 1: [firstGame, flawlessDebut], 2: [flawlessDebut] })
   })
 
   it('never mutates the bySeat argument', () => {
     const bySeat = { 1: [firstGame] }
-    broadcastDeviceUnlocks([1, 2], bySeat, [flawlessDebut])
+    broadcastDeviceUnlocks([1, 2], bySeat, [flawlessDebut], { 1: 'alice' })
     expect(bySeat).toEqual({ 1: [firstGame] })
+  })
+
+  it('announces a profile first round once, not once for the device and again for the profile', () => {
+    const stats = applyTestOutcome(DEFAULT_TEST_STATS, 'win', ['alice'])
+    const device = newlyUnlocked(TEST_CATALOG, stats, {})
+    const own = newlyUnlocked(TEST_CATALOG, testProfileStatsView(stats.profiles.alice), {}, 'alice')
+    const result = broadcastDeviceUnlocks([1], { 1: own }, device, { 1: 'alice' })
+    const ids = (result[1] ?? []).map((achievement) => achievement.id)
+    expect(ids).toEqual([...own.map((achievement) => achievement.id), flawlessDebut.id])
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).toContain(firstGame.id)
+  })
+
+  it('never congratulates a profile for a total another profile reached', () => {
+    const bigWinner = TEST_CATALOG.find((achievement) => achievement.title === 'Big Winner')
+    const unlocked: Record<string, number> = {}
+    const record = (stats: TestStats, profileId: string) => {
+      const device = newlyUnlocked(TEST_CATALOG, stats, unlocked)
+      const own = newlyUnlocked(TEST_CATALOG, testProfileStatsView(stats.profiles[profileId]), unlocked, profileId)
+      device.forEach((achievement) => (unlocked[unlockedKey(achievement.id, null)] = 1))
+      own.forEach((achievement) => (unlocked[unlockedKey(achievement.id, profileId)] = 1))
+      return { device, own }
+    }
+    let stats = applyTestOutcome(DEFAULT_TEST_STATS, 'loss', ['alice'])
+    record(stats, 'alice')
+    stats = applyTestOutcome(stats, 'win', ['alice'])
+    record(stats, 'alice')
+    stats = applyTestOutcome(stats, 'win', ['alice'])
+    record(stats, 'alice')
+    // Bob's first win is the device's third, which crosses Big Winner (3 wins) device-wide only.
+    stats = applyTestOutcome(stats, 'win', ['bob'])
+    const { device, own } = record(stats, 'bob')
+    expect(device).toEqual([bigWinner])
+    const result = broadcastDeviceUnlocks([1], { 1: own }, device, { 1: 'bob' })
+    expect(result[1]).toEqual(own)
+    expect(result[1]).not.toContain(bigWinner)
   })
 })
 
@@ -202,7 +253,7 @@ describe('mapUnlocksBySeat + broadcastDeviceUnlocks composed (the real call-site
   it('combines a profile-scoped unlock with a device-wide one, own-profile ordered before device', () => {
     const [firstGame, flawlessDebut] = TEST_CATALOG
     const bySeat = mapUnlocksBySeat([1, 2], { 1: 'profile-1' }, { 'profile-1': [firstGame] })
-    const combined = broadcastDeviceUnlocks([1, 2], bySeat, [flawlessDebut])
+    const combined = broadcastDeviceUnlocks([1, 2], bySeat, [flawlessDebut], { 1: 'profile-1' })
     expect(combined).toEqual({ 1: [firstGame, flawlessDebut], 2: [flawlessDebut] })
   })
 })

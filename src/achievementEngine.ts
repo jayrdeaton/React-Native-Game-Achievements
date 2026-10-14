@@ -89,18 +89,24 @@ export function mapUnlocksBySeat<TStats, Seat extends string | number>(seats: re
   return bySeat
 }
 
-// A device-wide unlock (no per-seat owner, e.g. an "All Profiles"/first-ever-game achievement)
-// still needs to reach every human seat's own facing UI in two-human-seat modes, since neither seat
-// is more entitled to it than the other. Appends `device` onto EVERY seat in `seats`, after that
-// seat's own already-profile-scoped unlocks - order matters, since it's the toast/display order a
-// player sees, not just data: every existing call site concatenates a seat's own unlocks BEFORE the
-// device-wide ones. Returns a new object; never mutates `bySeat`.
-export function broadcastDeviceUnlocks<TStats, Seat extends string | number>(seats: readonly Seat[], bySeat: Partial<Record<Seat, AchievementDefinition<TStats>[]>>, device: AchievementDefinition<TStats>[]): Partial<Record<Seat, AchievementDefinition<TStats>[]>> {
+// The unlocks to announce to each human seat this round: that seat's own profile-scoped unlocks,
+// then whichever device-wide unlocks are actually that seat's to celebrate. recordOutcome's `device`
+// evaluates the WHOLE catalog against the device-wide stats, so it also holds ordinary achievements
+// that the device's combined play just crossed. Those belong to a seat only when it has no profile
+// (a guest's progress IS the device's); a seat with a profile already gets its own copy through
+// `bySeat` when it earns one, so it only gets the genuinely device-only (scope: 'device') entries
+// on top. Without that filter a profile's first round toasts every first-round achievement twice,
+// and a profile can be congratulated for a total another profile racked up. Pass every human seat,
+// even a single-seat mode's one seat. Own unlocks always come before device ones (the toast order a
+// player sees). Seats with nothing to announce get no entry. Returns a new object; never mutates
+// `bySeat`.
+export function broadcastDeviceUnlocks<TStats, Seat extends string | number>(seats: readonly Seat[], bySeat: Partial<Record<Seat, AchievementDefinition<TStats>[]>>, device: AchievementDefinition<TStats>[], seatProfileIds: Partial<Record<Seat, string>> | undefined): Partial<Record<Seat, AchievementDefinition<TStats>[]>> {
   const broadcast = { ...bySeat }
-  if (device.length > 0) {
-    for (const seat of seats) {
-      broadcast[seat] = [...(broadcast[seat] ?? []), ...device]
-    }
+  if (device.length === 0) return broadcast
+  const deviceOnly = device.filter((achievement) => achievement.scope === 'device')
+  for (const seat of seats) {
+    const announced = seatProfileIds?.[seat] ? deviceOnly : device
+    if (announced.length > 0) broadcast[seat] = [...(broadcast[seat] ?? []), ...announced]
   }
   return broadcast
 }
