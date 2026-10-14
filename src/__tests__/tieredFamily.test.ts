@@ -104,7 +104,7 @@ describe('tieredFamily progress option', () => {
     expect(speedFamily(false).every((a) => a.progress === undefined)).toBe(true)
   })
 
-  it('would otherwise report a full bar for a player who is far too slow — the reason false exists', () => {
+  it('would otherwise report a full bar for a player who is far too slow - the reason false exists', () => {
     // 1200s against a -600 bronze threshold: the automatic fraction is (-1200)/(-600) = 2, which
     // clamps to 1. Guards the exact footgun the option documents.
     const [bronze] = speedFamily(undefined)

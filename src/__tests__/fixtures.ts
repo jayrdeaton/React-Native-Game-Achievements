@@ -1,6 +1,6 @@
 import { AchievementDefinition, applyDayPlayed, applyResult, applyWinStreak, DayStreakState, DEFAULT_DAY_STREAK, DEFAULT_OUTCOME_RECORD, DEFAULT_WIN_STREAK, OutcomeRecord, RoundResult, tieredFamily, WinStreakState } from '../index'
 
-// A deliberately small stand-in for a real game's own stats shape — this package is generic over
+// A deliberately small stand-in for a real game's own stats shape - this package is generic over
 // TStats, so the tests need SOME concrete shape to instantiate it with. Composed out of the
 // package's own primitives exactly the way the README tells a game to compose its own.
 export interface TestProfileStats extends DayStreakState {
@@ -33,14 +33,14 @@ export function applyTestOutcome(prev: TestStats, result: RoundResult, profileId
   }
 }
 
-// Synthesizes the full TStats-shaped view one profile's own bucket is evaluated against — the
+// Synthesizes the full TStats-shaped view one profile's own bucket is evaluated against - the
 // generic equivalent of LightCycles' own getProfileStatsView, and exactly the shape
 // createAchievementBindings' own getProfileStatsView parameter expects.
 export function testProfileStatsView(profileStats: TestProfileStats): TestStats {
   return { ...profileStats, firstGameResult: null, profiles: {} }
 }
 
-// Synthesizes every profile's view at once, keyed by profile id — what a real app's own
+// Synthesizes every profile's view at once, keyed by profile id - what a real app's own
 // `profileViews` option (see useAchievements.ts) passes to useAchievements.
 export function testProfileViews(stats: TestStats): Record<string, TestStats> {
   return Object.fromEntries(Object.entries(stats.profiles).map(([id, bucket]) => [id, testProfileStatsView(bucket)]))
@@ -54,7 +54,7 @@ export const TEST_CATALOG: AchievementDefinition<TestStats>[] = [
     description: 'Win the very first game you ever play.',
     tier: 'gold',
     icon: 'star',
-    // The one device-scoped entry — deliberately present so every test that evaluates a profile
+    // The one device-scoped entry - deliberately present so every test that evaluates a profile
     // view proves this never leaks into a profile's own unlock namespace.
     scope: 'device',
     isUnlocked: (stats) => stats.firstGameResult === 'win'

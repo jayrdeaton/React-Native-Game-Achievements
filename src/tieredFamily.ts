@@ -1,7 +1,7 @@
 import { ACHIEVEMENT_TIERS, AchievementDefinition, AchievementScope, AchievementTier } from './types'
 
 // The bronze/silver/gold cut-offs for one family. Normally ascending, though nothing here enforces
-// that — see `value` below for the one case (a lower-is-better goal) where they're inverted.
+// that - see `value` below for the one case (a lower-is-better goal) where they're inverted.
 export interface TieredThresholds {
   bronze: number
   silver: number
@@ -9,16 +9,16 @@ export interface TieredThresholds {
 }
 
 export interface TieredFamilyOptions<TStats> {
-  // Family id prefix — each generated achievement is `${id}_${tier}`, e.g. `total_wins_bronze`.
+  // Family id prefix - each generated achievement is `${id}_${tier}`, e.g. `total_wins_bronze`.
   // Stored unlock keys are built from these ids (see achievementEngine.ts's unlockedKey), so
   // renaming a family after release orphans its players' existing unlocks.
   id: string
   titles: Record<AchievementTier, string>
-  // Called once per tier to build that tier's copy — `tier` is passed alongside the threshold for
+  // Called once per tier to build that tier's copy - `tier` is passed alongside the threshold for
   // the occasional family whose wording changes by tier, but most only use the number
   // ("Win {n} total games.").
   description: (threshold: number, tier: AchievementTier) => string
-  // One icon for the whole family — a family is the same achievement at three difficulties, so
+  // One icon for the whole family - a family is the same achievement at three difficulties, so
   // three different icons would read as three unrelated entries on an achievements screen.
   icon: string
   thresholds: TieredThresholds
@@ -26,19 +26,19 @@ export interface TieredFamilyOptions<TStats> {
   // family: one accessor, three achievements. A lower-is-better goal (fastest round, fewest moves)
   // fits by returning a negated value with negated thresholds, since the comparison is always `>=`.
   value: (stats: TStats) => number
-  // Applied to all three tiers — omit for the usual per-profile default. A device-scoped FAMILY is
+  // Applied to all three tiers - omit for the usual per-profile default. A device-scoped FAMILY is
   // unusual (device scope is for one-off flags with no profile identity, which are rarely tiered);
   // it's here so the option isn't silently unavailable, not because it's the expected case.
   scope?: AchievementScope
   // How each tier reports progress. Omitted, every tier gets the automatic
   // progressToward(value, threshold) below.
   //
-  // Pass `false` for a family whose progress isn't meaningful — in particular any LOWER-is-better
+  // Pass `false` for a family whose progress isn't meaningful - in particular any LOWER-is-better
   // family (a fastest time, a fewest-moves count), which is expressed by negating both the value
   // and the thresholds so the `>=` comparison still works. The automatic fraction is actively WRONG
   // there: with value -1200 against threshold -600, value/threshold is 2, which clamps to a
   // full bar for a player who is twice as slow as the bronze tier asks. There is no correct
-  // general formula, because a lower-is-better goal has no natural zero to measure from — so this
+  // general formula, because a lower-is-better goal has no natural zero to measure from - so this
   // takes it out of the picture rather than guessing.
   //
   // Pass a function to compute it yourself; it receives that tier's own threshold alongside the
@@ -53,7 +53,7 @@ export function progressToward(value: number, threshold: number): number {
   return Math.min(1, Math.max(0, value / threshold))
 }
 
-// Generates the bronze/silver/gold triple for one tiered family — the single most repeated shape in
+// Generates the bronze/silver/gold triple for one tiered family - the single most repeated shape in
 // any game's catalog, and the reason a catalog stays readable at 25+ achievements. Each tier gets a
 // `>=` predicate against its own threshold plus a `progress` toward it, so a partially-complete gold
 // tier still renders a meaningful progress bar while its bronze/silver siblings read as done.

@@ -1,7 +1,7 @@
 export type RoundResult = 'win' | 'loss' | 'draw'
 
 // The played/wins/losses/draws quadruple every game re-declares half a dozen times over (overall,
-// per difficulty, per color, per mode, per profile). Nothing here knows what a bucket *means* —
+// per difficulty, per color, per mode, per profile). Nothing here knows what a bucket *means* -
 // that's entirely the game's own stats shape.
 export interface OutcomeRecord {
   played: number
@@ -32,19 +32,19 @@ export function applyResult(prev: OutcomeRecord | undefined, result: RoundResult
   }
 }
 
-// The keyed-bucket form of applyResult — returns a new map with just that one key replaced. Keys
+// The keyed-bucket form of applyResult - returns a new map with just that one key replaced. Keys
 // are used verbatim: normalize first (lowercase a hex color, say) if two spellings should count as
 // the same bucket.
 export function applyResultToBucket(buckets: Record<string, OutcomeRecord>, key: string, result: RoundResult): Record<string, OutcomeRecord> {
   return { ...buckets, [key]: applyResult(buckets[key], result) }
 }
 
-// 0 for a bucket with no rounds yet, rather than NaN — every caller wants it sortable.
+// 0 for a bucket with no rounds yet, rather than NaN - every caller wants it sortable.
 export function getWinRate(record: OutcomeRecord): number {
   return record.played > 0 ? record.wins / record.played : 0
 }
 
-// A bucket needs at least this many rounds before its win rate means anything — otherwise one lucky
+// A bucket needs at least this many rounds before its win rate means anything - otherwise one lucky
 // win reads as a flawless 100%.
 export const DEFAULT_MIN_SAMPLE = 3
 
@@ -78,13 +78,13 @@ export function getBestWinRateKey(buckets: Record<string, OutcomeRecord>, minSam
   return best
 }
 
-// Wins in whichever single bucket has the most — the `value` accessor for an "N wins with one
+// Wins in whichever single bucket has the most - the `value` accessor for an "N wins with one
 // color" tiered family (see tieredFamily.ts).
 export function getMaxWinsInAnyBucket(buckets: Record<string, OutcomeRecord>): number {
   return Object.values(buckets).reduce((max, record) => Math.max(max, record.wins), 0)
 }
 
-// How many distinct buckets have at least one win — the `value` accessor for a "win with N
+// How many distinct buckets have at least one win - the `value` accessor for a "win with N
 // different colors" tiered family (see tieredFamily.ts).
 export function countBucketsWithAWin(buckets: Record<string, OutcomeRecord>): number {
   return Object.values(buckets).filter((record) => record.wins > 0).length

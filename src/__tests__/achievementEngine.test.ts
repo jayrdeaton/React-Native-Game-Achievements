@@ -87,7 +87,7 @@ describe('newlyUnlocked', () => {
   })
 
   it('reads the profile-namespaced key when checking what is already unlocked', () => {
-    // The bare device-wide key is set, but this profile own key is not — so it is still new here.
+    // The bare device-wide key is set, but this profile own key is not - so it is still new here.
     const unlocked = { first_game: 1 }
     expect(newlyUnlocked(TEST_CATALOG, statsAfter('win'), unlocked, 'profile-1').map((a) => a.id)).toContain('first_game')
   })
@@ -111,7 +111,7 @@ describe('createAchievementBindings', () => {
 
   it('never leaks a device-scoped achievement into evaluateUnlockedIdsForProfile', () => {
     const deviceStats = applyTestOutcome(DEFAULT_TEST_STATS, 'win', ['profile-1'])
-    // Device-wide, flawless_debut is unlocked — the very first game recorded was a win.
+    // Device-wide, flawless_debut is unlocked - the very first game recorded was a win.
     expect(bindings.evaluateUnlockedIds(deviceStats).has('flawless_debut')).toBe(true)
     // It's scope: 'device' though, so profile-1's own view never surfaces it, even though that same
     // win was also profile-1's own first game.

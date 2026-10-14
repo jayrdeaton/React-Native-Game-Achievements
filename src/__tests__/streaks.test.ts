@@ -13,7 +13,7 @@ describe('applyWinStreak', () => {
     expect(streak).toEqual({ currentWinStreak: 0, bestWinStreak: 2 })
   })
 
-  it('resets on a draw too — a draw is not a win either', () => {
+  it('resets on a draw too - a draw is not a win either', () => {
     const streak = applyWinStreak(applyWinStreak(DEFAULT_WIN_STREAK, 'win'), 'draw')
     expect(streak).toEqual({ currentWinStreak: 0, bestWinStreak: 1 })
   })
@@ -32,7 +32,7 @@ describe('localDateString', () => {
   })
 
   it('uses local calendar fields, not UTC', () => {
-    // Just after local midnight — in any timezone behind UTC this instant is still the previous day
+    // Just after local midnight - in any timezone behind UTC this instant is still the previous day
     // in UTC, and a "days in a row" streak must follow the player's own calendar.
     expect(localDateString(new Date(2026, 2, 1, 0, 30))).toBe('2026-03-01')
   })

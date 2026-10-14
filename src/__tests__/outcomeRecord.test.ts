@@ -86,7 +86,7 @@ describe('bucket summaries', () => {
   })
 
   it('getBestWinRateKey ignores buckets under the sample floor', () => {
-    // green has a perfect 2/2 but only 2 rounds, under the default floor of 3 — blue (3/4) wins.
+    // green has a perfect 2/2 but only 2 rounds, under the default floor of 3 - blue (3/4) wins.
     expect(getBestWinRateKey(buckets)).toBe('blue')
   })
 

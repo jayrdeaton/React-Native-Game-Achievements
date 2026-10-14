@@ -1,6 +1,6 @@
 import { RoundResult } from './outcomeRecord'
 
-// Streak bookkeeping — the second half of the stats primitives (see outcomeRecord.ts for the first).
+// Streak bookkeeping - the second half of the stats primitives (see outcomeRecord.ts for the first).
 // This package deliberately does NOT define a StatsState of its own: what a game tracks
 // (per-difficulty records, goals conceded, best completion time) is game-specific, and baking any of
 // it in here would mean every other game carries fields it doesn't use. What IS the same everywhere
@@ -14,7 +14,7 @@ export interface WinStreakState {
 
 export const DEFAULT_WIN_STREAK: WinStreakState = { currentWinStreak: 0, bestWinStreak: 0 }
 
-// A draw resets the streak, same as a loss — a draw isn't a win either, and a "5 wins in a row"
+// A draw resets the streak, same as a loss - a draw isn't a win either, and a "5 wins in a row"
 // achievement that silently tolerates draws in the middle isn't what its copy promises.
 export function applyWinStreak(prev: WinStreakState, result: RoundResult): WinStreakState {
   const currentWinStreak = result === 'win' ? prev.currentWinStreak + 1 : 0
@@ -23,17 +23,17 @@ export function applyWinStreak(prev: WinStreakState, result: RoundResult): WinSt
 
 export interface DayStreakState {
   distinctDaysPlayed: number
-  // Consecutive local calendar days played, ending on the last day played — resets to 1 (not 0) on
+  // Consecutive local calendar days played, ending on the last day played - resets to 1 (not 0) on
   // any gap of a full day or more, since the day just played is always day one of a new streak.
   currentDayStreak: number
   bestDayStreak: number
-  // Local YYYY-MM-DD bookkeeping — never meant to be rendered directly.
+  // Local YYYY-MM-DD bookkeeping - never meant to be rendered directly.
   lastPlayedDate: string | null
 }
 
 export const DEFAULT_DAY_STREAK: DayStreakState = { distinctDaysPlayed: 0, currentDayStreak: 0, bestDayStreak: 0, lastPlayedDate: null }
 
-// Local calendar date, NOT UTC — a player's "days in a row" should roll over at their own midnight,
+// Local calendar date, NOT UTC - a player's "days in a row" should roll over at their own midnight,
 // not at some offset from it.
 export function localDateString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -52,13 +52,13 @@ export function previousDateString(dateString: string): string {
 // Idempotent within a single day: the second and later calls on the same calendar day return an
 // EQUAL state, so a game can call this on every round without inflating distinctDaysPlayed.
 //
-// Always returns a fresh object holding exactly the four DayStreakState fields — never the argument
+// Always returns a fresh object holding exactly the four DayStreakState fields - never the argument
 // itself, even on the same-day path. That matters because `prev` is typed structurally: a game
 // composing its stats as `{...stats, ...applyDayPlayed(stats)}` (the README's own pattern) passes
 // its WHOLE stats object in, and returning it verbatim would spread every other field back over
 // itself, silently reverting the round that was just recorded.
 //
-// `now` defaults to the real clock — overridable so tests (and a game's own tests) can exercise
+// `now` defaults to the real clock - overridable so tests (and a game's own tests) can exercise
 // day-boundary logic without mocking the global Date.
 export function applyDayPlayed(prev: DayStreakState, now: Date = new Date()): DayStreakState {
   const today = localDateString(now)
@@ -66,7 +66,7 @@ export function applyDayPlayed(prev: DayStreakState, now: Date = new Date()): Da
     return { distinctDaysPlayed: prev.distinctDaysPlayed, currentDayStreak: prev.currentDayStreak, bestDayStreak: prev.bestDayStreak, lastPlayedDate: prev.lastPlayedDate }
   }
 
-  // A new day extends the streak only if it directly follows the last day played — any bigger gap
+  // A new day extends the streak only if it directly follows the last day played - any bigger gap
   // (or the very first day ever) restarts it at 1.
   const currentDayStreak = prev.lastPlayedDate === previousDateString(today) ? prev.currentDayStreak + 1 : 1
   return {

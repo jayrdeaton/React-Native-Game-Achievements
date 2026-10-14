@@ -9,7 +9,7 @@ describe('isValidUnlockedAchievements', () => {
     expect(isValidUnlockedAchievements({ first_game: 1756800000000, 'profile-1:first_game': 1756800000001 })).toBe(true)
   })
 
-  it('accepts an id no catalog defines anymore — an inert extra entry is not a corrupt blob', () => {
+  it('accepts an id no catalog defines anymore - an inert extra entry is not a corrupt blob', () => {
     expect(isValidUnlockedAchievements({ since_removed_achievement: 1756800000000 })).toBe(true)
   })
 

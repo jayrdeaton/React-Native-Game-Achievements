@@ -1,7 +1,7 @@
 import { unlockedKey } from './achievementEngine'
 import { ACHIEVEMENT_TIER_COLORS, AchievementDefinition, AchievementTier, UnlockedAchievementsState } from './types'
 
-// One row's worth of already-resolved data for an achievements-catalog list — everything a
+// One row's worth of already-resolved data for an achievements-catalog list - everything a
 // presentational row component needs EXCEPT the locked/unlocked badge color, which stays a
 // rendering decision made by whatever renders these rows (see AchievementRow's own doc comment on
 // why `badgeColor` is a caller-supplied prop, not something the engine decides).
@@ -11,17 +11,17 @@ export interface AchievementCatalogRow {
   title: string
   description: string
   // ACHIEVEMENT_TIER_COLORS[achievement.tier] (or the caller's own override), already resolved.
-  // NOT the rendered badge color — that also depends on whether the row is locked.
+  // NOT the rendered badge color - that also depends on whether the row is locked.
   tierColor: string
   // Raw unlock timestamp, or undefined if still locked.
   unlockedAt?: number
   // formatUnlockedLabel(unlockedAt), or undefined if still locked.
   unlockedLabel?: string
-  // Only set while locked, mirroring AchievementRow's own contract — an unlocked row never shows a
+  // Only set while locked, mirroring AchievementRow's own contract - an unlocked row never shows a
   // progress bar, so there's nothing to compute once unlockedAt is set.
   progress?: number
   // Whether this row is a device-wide achievement being viewed from inside a specific profile's own
-  // tab — every app's identical `effectiveProfileId !== null && scope === 'device'` check.
+  // tab - every app's identical `effectiveProfileId !== null && scope === 'device'` check.
   deviceMarker: boolean
 }
 
@@ -52,7 +52,7 @@ export interface GetAchievementCatalogRowsOptions {
 // every app's ACHIEVEMENT_CATALOG.map() loop hand-rolls today. `deviceStats` is the raw device-wide
 // stats blob (used only for scope:'device' achievements); `effectiveStats` is whatever the caller's
 // own screen already computed as its `statsView` (device-wide for an "All Profiles" tab, or that
-// profile's own synthesized view). Does NOT resolve locked-vs-unlocked badgeColor — that stays a
+// profile's own synthesized view). Does NOT resolve locked-vs-unlocked badgeColor - that stays a
 // rendering decision, made by whatever presentational layer consumes these rows.
 export function getAchievementCatalogRows<TStats>(catalog: AchievementDefinition<TStats>[], deviceStats: TStats, effectiveStats: TStats, unlocked: UnlockedAchievementsState, profileId: string | null, options: GetAchievementCatalogRowsOptions = {}): AchievementCatalogRow[] {
   const tierColors = options.tierColors ?? ACHIEVEMENT_TIER_COLORS

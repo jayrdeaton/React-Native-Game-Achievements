@@ -25,7 +25,7 @@ describe('defaultFormatUnlockedLabel', () => {
 })
 
 describe('getAchievementCatalogRows', () => {
-  // A profile that has played and won its first game — unlocks first_game/total_wins_bronze under
+  // A profile that has played and won its first game - unlocks first_game/total_wins_bronze under
   // its own profile-scoped view, and the device-scoped flawless_debut device-wide.
   const stats = applyTestOutcome(DEFAULT_TEST_STATS, 'win', ['profile-1'])
   const profileView = testProfileStatsView(stats.profiles['profile-1'])
@@ -56,7 +56,7 @@ describe('getAchievementCatalogRows', () => {
 
   it('leaves a profile-scoped achievement locked under "All Profiles" even if unlocked under a specific profile', () => {
     const rows = getAchievementCatalogRows(TEST_CATALOG, stats, stats, unlocked, null)
-    // 'total_wins_bronze' is only recorded under the 'profile-1:' namespace above, not bare — the
+    // 'total_wins_bronze' is only recorded under the 'profile-1:' namespace above, not bare - the
     // "All Profiles" view has its own, separate device-wide key.
     expect(rows.find((row) => row.id === 'total_wins_bronze')?.unlockedAt).toBeUndefined()
   })

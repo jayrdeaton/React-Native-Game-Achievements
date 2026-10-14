@@ -13,18 +13,18 @@ export interface UseAchievementsOptions<TStats, TRoot> {
   // That slice's own actions.
   actions: AchievementsActions<TStats>
   // Maps a stats blob to the per-profile views achievements should ALSO be evaluated against, keyed
-  // by profile id. Omit entirely for a game with no profile-scoped achievements — everything then
+  // by profile id. Omit entirely for a game with no profile-scoped achievements - everything then
   // lives in the device-wide namespace. See the README's per-profile section.
   profileViews?: (stats: TStats) => Record<string, TStats>
 }
 
 export interface RecordOutcomeResult<TStats> {
-  // The updated stats, already in the store — returned so a caller doesn't have to wait a render
+  // The updated stats, already in the store - returned so a caller doesn't have to wait a render
   // to read what it just recorded.
   stats: TStats
   // Achievements that unlocked device-wide on this update, in catalog order. Empty if none did.
   device: AchievementDefinition<TStats>[]
-  // Per-profile newly-unlocked lists, keyed by profile id — only profiles that actually unlocked
+  // Per-profile newly-unlocked lists, keyed by profile id - only profiles that actually unlocked
   // something appear at all. A game that thinks in seats maps its own seat -> profile id.
   profiles: Record<string, AchievementDefinition<TStats>[]>
 }
@@ -35,10 +35,10 @@ export interface UseAchievementsResult<TStats> {
   // The single funnel: hand it the game's own pure stats updater, and it evaluates the catalog
   // against the result, stores both, and reports what newly unlocked.
   recordOutcome: (update: (prev: TStats) => TStats) => RecordOutcomeResult<TStats>
-  // Wipes stats and unlocks back to defaults. Irreversible — callers are expected to confirm first.
+  // Wipes stats and unlocks back to defaults. Irreversible - callers are expected to confirm first.
   resetAll: () => void
   // Drops one profile's unlock keys, so a deleted profile leaves no orphaned unlock history behind.
-  // The game's own stats blob is the game's to prune, via the optional updater — pass one that
+  // The game's own stats blob is the game's to prune, via the optional updater - pass one that
   // removes the profile's bucket from TStats, or omit it if TStats has no per-profile nesting.
   removeProfile: (profileId: string, update?: (prev: TStats) => TStats) => void
 }
