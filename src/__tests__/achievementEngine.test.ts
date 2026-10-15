@@ -212,6 +212,21 @@ describe('broadcastDeviceUnlocks', () => {
     expect(bySeat).toEqual({ 1: [firstGame] })
   })
 
+  it('gives device-wide unlocks only to the winners, while the loser keeps its own unlocks', () => {
+    const result = broadcastDeviceUnlocks([1, 2], { 2: [firstGame] }, [firstGame, flawlessDebut], undefined, { winners: [1] })
+    expect(result).toEqual({ 1: [firstGame, flawlessDebut], 2: [firstGame] })
+  })
+
+  it('leaves out a losing guest seat with no unlocks of its own', () => {
+    const result = broadcastDeviceUnlocks([1, 2], {}, [firstGame, flawlessDebut], undefined, { winners: [2] })
+    expect(result).toEqual({ 2: [firstGame, flawlessDebut] })
+  })
+
+  it('gives every seat the device-wide unlocks on a draw (winners lists both seats)', () => {
+    const result = broadcastDeviceUnlocks([1, 2], {}, [flawlessDebut], { 1: 'alice', 2: 'bob' }, { winners: [1, 2] })
+    expect(result).toEqual({ 1: [flawlessDebut], 2: [flawlessDebut] })
+  })
+
   it('announces a profile first round once, not once for the device and again for the profile', () => {
     const stats = applyTestOutcome(DEFAULT_TEST_STATS, 'win', ['alice'])
     const device = newlyUnlocked(TEST_CATALOG, stats, {})

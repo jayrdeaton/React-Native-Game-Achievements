@@ -234,6 +234,11 @@ just that seat (`broadcastDeviceUnlocks([1], bySeat, device, seatProfileIds)[1] 
 always come first (`[...own, ...device]`), since that's the toast order a player sees, and it
 returns a new object rather than mutating `bySeat`.
 
+In a head-to-head mode where both seats are human, pass the round's winners so a device milestone
+lands only on the winner's card: `broadcastDeviceUnlocks(seats, bySeat, device, seatProfileIds, {
+winners: [winner] })`. Each seat still gets its own unlocks. On a draw, pass both seats (or leave
+`winners` out).
+
 ### The self-healing re-sweep
 
 When `useAchievements` mounts, every achievement the stored stats *already clear* but that isn't

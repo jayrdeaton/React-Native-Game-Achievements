@@ -100,11 +100,17 @@ export function mapUnlocksBySeat<TStats, Seat extends string | number>(seats: re
 // even a single-seat mode's one seat. Own unlocks always come before device ones (the toast order a
 // player sees). Seats with nothing to announce get no entry. Returns a new object; never mutates
 // `bySeat`.
-export function broadcastDeviceUnlocks<TStats, Seat extends string | number>(seats: readonly Seat[], bySeat: Partial<Record<Seat, AchievementDefinition<TStats>[]>>, device: AchievementDefinition<TStats>[], seatProfileIds: Partial<Record<Seat, string>> | undefined): Partial<Record<Seat, AchievementDefinition<TStats>[]>> {
+//
+// `winners` limits the device-wide unlocks to the seats that won the round, for a head-to-head
+// mode where both seats are human: a device milestone the round just crossed ("first win on this
+// device") belongs on the winner's card, not the loser's too. Every seat still gets its own
+// profile-scoped unlocks. Omit it (or pass every seat) for a draw or a single-seat mode.
+export function broadcastDeviceUnlocks<TStats, Seat extends string | number>(seats: readonly Seat[], bySeat: Partial<Record<Seat, AchievementDefinition<TStats>[]>>, device: AchievementDefinition<TStats>[], seatProfileIds: Partial<Record<Seat, string>> | undefined, options: { winners?: readonly Seat[] } = {}): Partial<Record<Seat, AchievementDefinition<TStats>[]>> {
   const broadcast = { ...bySeat }
   if (device.length === 0) return broadcast
   const deviceOnly = device.filter((achievement) => achievement.scope === 'device')
   for (const seat of seats) {
+    if (options.winners && !options.winners.includes(seat)) continue
     const announced = seatProfileIds?.[seat] ? deviceOnly : device
     if (announced.length > 0) broadcast[seat] = [...(broadcast[seat] ?? []), ...announced]
   }
