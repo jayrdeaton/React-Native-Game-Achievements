@@ -42,25 +42,51 @@ evaluation, namespacing and persistence machinery.
   played/wins/losses/draws quadruple every game re-declares half a dozen times over (overall, per
   difficulty, per color, per mode, per profile), and the keyed-bucket form for the "per X" cases.
   `resultFor(winner, subject)` turns a round's winner into one participant's own win/loss/draw.
+  `DEFAULT_OUTCOME_RECORD` is the all-zero record (`{ played: 0, wins: 0, losses: 0, draws: 0 }`)
+  for seeding your default stats; `applyResult` already treats a missing record as this.
 - **`getWinRate` / `getMostPlayedKey` / `getBestWinRateKey` / `getMaxWinsInAnyBucket` /
   `countBucketsWithAWin`** - the bucket summaries an achievements screen actually displays
   ("favorite color", "best performing color") and that tiered families measure ("win with N
-  different colors"). `getBestWinRateKey` ignores buckets under a sample floor, so one lucky win
-  doesn't read as a flawless 100%.
+  different colors"). `getBestWinRateKey(buckets, minSample?)` ignores buckets under a sample floor
+  (`DEFAULT_MIN_SAMPLE`, 3 rounds), so one lucky win doesn't read as a flawless 100%. `getWinRate`
+  returns 0, not `NaN`, for a bucket with no rounds; `getMostPlayedKey` and `getBestWinRateKey`
+  return `null` when no bucket qualifies.
 - **`applyWinStreak` / `applyDayPlayed`**: consecutive-win and consecutive-calendar-day
   bookkeeping. A draw resets a win streak (a draw isn't a win either). Day streaks use the player's
-  *local* calendar, are idempotent within a day, and restart at 1 after a gap.
+  *local* calendar, are idempotent within a day, and restart at 1 after a gap. `DEFAULT_WIN_STREAK`
+  and `DEFAULT_DAY_STREAK` are their all-zero starting states. `localDateString(date)` (local
+  `YYYY-MM-DD`, not UTC) and `previousDateString('YYYY-MM-DD')` (the calendar day before, correct
+  across month and year boundaries) are the date helpers `applyDayPlayed` uses, exported for a game
+  that keys its own stats by local day.
 - **`tieredFamily`**: generates a bronze/silver/gold triple from one accessor and three thresholds,
   filling in `progress` automatically. The single most repeated shape in any catalog.
+  `progressToward(value, threshold)` is that automatic fraction on its own: `value / threshold`
+  clamped to 0-1, and 1 for a threshold of 0 or less (any value already clears it).
+- **`ACHIEVEMENT_TIERS` / `ACHIEVEMENT_TIER_COLORS`**: the tiers in ascending order of difficulty
+  (`['bronze', 'silver', 'gold']`, the order `tieredFamily` generates them in and the one to sort or
+  group by), and a badge color for each (`#CD7F32`, `#C0C0C8`, `#FFD54F`). The colors are data,
+  not UI: ignore the map and supply your own palette if you like.
 - **`evaluateUnlockedIds` / `newlyUnlocked` / `unlockedKey` / `parseUnlockedKey`**: the engine.
   Given a catalog and a stats object, what's unlocked, and what's *newly* unlocked relative to a
-  stored map.
+  stored map. `evaluateUnlockedIds(catalog, stats, { scope: 'profile' })` skips `scope: 'device'`
+  achievements, and `newlyUnlocked(catalog, stats, unlocked, profileId)` switches to that scope on
+  its own when you pass a profile id.
+- **`isAchievementUnlocked` / `achievementUnlockedAt` / `removeProfileUnlocks`**: reads and one
+  write over a stored unlock map. `isAchievementUnlocked(unlocked, id, profileId?)` and
+  `achievementUnlockedAt(unlocked, id, profileId?)` (the unlock timestamp in ms, or `null`) look up
+  one achievement device-wide (`profileId` omitted or `null`) or for one profile.
+  `removeProfileUnlocks(unlocked, profileId)` returns the map without that profile's keys (the same
+  object back when it had none); it's what `useAchievements`' `removeProfile` runs.
 - **`createAchievementBindings`**: pre-binds `evaluateUnlockedIds` / `evaluateUnlockedIdsForProfile`
   / `unlockedKey` to your own catalog and profile-stats-view function, so your app's own
   `achievementEngine.ts` shrinks to a five-line re-export instead of hand-rolling the same binding
   every game needs. See "Per-profile achievements" below.
 - **`createAchievementsSlice`**: your stats and unlock map as a Redux slice, persisted with the rest
-  of your store; it validates and migrates what rehydrates.
+  of your store; it validates and migrates what rehydrates. `DEFAULT_UNLOCKED_ACHIEVEMENTS` (an
+  empty map) and `isValidUnlockedAchievements(value)` are the unlock map's default and the check
+  the slice runs on rehydrate: a plain object whose every value is a finite number. It doesn't
+  check keys against your catalog, so an unlock from a since-removed achievement is just an inert
+  extra entry.
 - **`useAchievements`**: the hook over that slice: runs the self-healing re-sweep and gives you one
   `recordOutcome` funnel that stores and reports what just unlocked.
 - **`mapUnlocksBySeat` / `broadcastDeviceUnlocks`**: `recordOutcome`'s `profiles` result is keyed by
@@ -139,6 +165,19 @@ export function applyRoundOutcome(prev: GameStats, winner: Player | null, contex
 `applyDayPlayed` always returns a fresh object holding exactly its own four fields, never the
 argument, so the `...applyDayPlayed(prev)` spread above can't revert anything else you just set.
 
+The same shape's starting value is built from the exported defaults:
+
+```ts
+import { DEFAULT_DAY_STREAK, DEFAULT_OUTCOME_RECORD, DEFAULT_WIN_STREAK } from '@tastic/achievements'
+
+export const DEFAULT_STATS: GameStats = {
+  overall: DEFAULT_OUTCOME_RECORD,
+  streak: DEFAULT_WIN_STREAK,
+  colors: {},
+  ...DEFAULT_DAY_STREAK // distinctDaysPlayed, currentDayStreak, bestDayStreak, lastPlayedDate
+}
+```
+
 Keep this function pure and take `now` as a parameter - that's what lets you test day-boundary and
 streak behavior without mocking the global `Date`.
 
@@ -193,10 +232,15 @@ const { device, profiles } = recordOutcome((prev) => applyRoundOutcome(prev, win
 ```
 
 `recordOutcome` takes *your* updater, evaluates the catalog against the result, stores both, and
-returns what newly unlocked - device-wide in `device`, and per profile id in `profiles`. A game
-that thinks in seats maps its own seat → profile id. Every write reads the store's current state at
-call time, so two outcomes recorded back to back can't overwrite each other. There is no loading
-state: `PersistGate` already holds rendering until the store has rehydrated.
+returns what newly unlocked - device-wide in `device`, and per profile id in `profiles` (only
+profiles that unlocked something get a key) - along with the updated `stats`, so you don't have to
+wait a render to read what you just recorded. A game that thinks in seats maps its own seat →
+profile id. Every write reads the store's current state at call time, so two outcomes recorded back
+to back can't overwrite each other. There is no loading state: `PersistGate` already holds
+rendering until the store has rehydrated.
+
+`resetAll()` puts stats back to `defaultStats` with nothing unlocked. It's irreversible, so confirm
+with the player first. `removeProfile` is covered under "Per-profile achievements" below.
 
 ### Seat-keyed unlocks for local multiplayer
 
@@ -264,7 +308,10 @@ reads as locked even if someone else on the device has - `isAchievementUnlocked`
 not fall back to the device-wide key.
 
 When a profile is deleted, call `removeProfile(id, updater)` so it leaves no orphaned unlock history
-behind. Prefix matching is exact, so a profile whose id is a prefix of another's is unaffected.
+behind. Prefix matching is exact, so a profile whose id is a prefix of another's is unaffected. The
+updater is optional: pass one that removes the profile's bucket from your stats, or leave it out if
+your `TStats` has no per-profile nesting. Outside the hook, `removeProfileUnlocks` does the unlock
+half on a plain map.
 
 ### Binding the engine to your own catalog
 

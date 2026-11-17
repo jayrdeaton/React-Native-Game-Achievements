@@ -8,7 +8,7 @@ import { UnlockedAchievementsState } from './types'
 const REHYDRATE = 'persist/REHYDRATE'
 
 // Everything one game persists for achievements: its own stats shape plus the unlock map (achievement
-// id, or `${id}@${profileId}` for a per-profile unlock, to the time it unlocked).
+// id, or `${profileId}:${id}` for a per-profile unlock (see unlockedKey), to the time it unlocked).
 export interface AchievementsState<TStats> {
   stats: TStats
   unlocked: UnlockedAchievementsState
