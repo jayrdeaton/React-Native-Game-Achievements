@@ -384,3 +384,7 @@ The engine itself is plain functions with no dependencies. AsyncStorage is no lo
 persistence is your store's redux-persist setup.
 
 No React Native, Paper, Skia or Reanimated peers: nothing here renders.
+
+---
+
+Made by [Infinite Token](https://www.infinitetoken.com), the team behind [Lumber](https://lumber.infinitetoken.com): end-to-end encrypted logging.
